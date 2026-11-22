@@ -1,16 +1,16 @@
-# LudensScope
+# LudensScope Surround
 
-[![build](https://github.com/ltillegal/ludensscope/actions/workflows/build.yml/badge.svg)](https://github.com/ltillegal/ludensscope/actions/workflows/build.yml)
+[![build](https://github.com/ltillegal/ludensscope-surround/actions/workflows/build.yml/badge.svg)](https://github.com/ltillegal/ludensscope-surround/actions/workflows/build.yml)
 
 [Русский](README.ru.md) · **English** · [❤ Donate](https://www.paypal.com/donate/?business=0eskimo0%40gmail.com&item_name=LudensScope&currency_code=USD)
 
-A minimalist stereo analyser in **VST3, AU, AAX, CLAP** and standalone formats: spectrum, loudness
-to ITU-R BS.1770-4, true peak, vectorscope, oscilloscope and reference.
+A minimalist stereo and decoded 5.1 analyser in **VST3, AU, AAX, CLAP** and standalone formats:
+spectrum, loudness to ITU-R BS.1770-4, true peak, vectorscope, oscilloscope and reference.
 
 The free Lite is not a time-limited demo. Holiday offer: PRO is a one-time
 EUR 19 (was EUR 29) purchase for the reference workflow, snapshot slots, gain
-staging, all 7 themes and the
-advanced FFT/display options. No subscriptions and no telemetry. The project
+staging, six-channel 5.1 room view, all 7 themes and the advanced FFT/display
+options. No subscriptions and no telemetry. The project
 state stores FFT snapshots, analyser settings, the UI state and the reference
 metadata. There are no general plugin presets — only named target curves.
 
@@ -22,6 +22,7 @@ One installer, two editions.
 |---|:---:|:---:|
 | Spectrum, waterfall, LUFS/TP/LRA | yes | yes |
 | VU, oscilloscope, vectorscope | yes | yes |
+| Decoded 5.1 room view + channel FFT | - | yes |
 | Guides and band solo | yes | yes |
 | FFT size/window, speed, span, mono | yes | yes |
 | PNG export, update check | yes | yes |
@@ -38,7 +39,7 @@ Press **UNLOCK** in the header (or `FFT -> Unlock PRO`) and paste the key.
 Holiday offer: PRO is a one-time PayPal purchase at EUR 19 (was EUR 29).
 After paying, email alek.ludens@gmail.com and you will receive a key.
 The licence is offline, stored
-in the LudensScope config directory, and includes 1.x updates. No account and
+in the `LudensScopeSurround` config directory, and includes 2.x updates. No account and
 no telemetry. Keys issued from 1.0.4 onward activate on up to 2 machines;
 earlier keys stay unrestricted.
 
@@ -55,8 +56,9 @@ directory; if it does not, email alek.ludens@gmail.com for a free key.
 | LUFS (M/S/I, gating), K-weighting, LRA | `Source/dsp/LoudnessMeter.*` |
 | Spectrum: FFT 2048–16384, Hann / Blackman-Harris / flat-top, log scale 20 Hz – 20 kHz, inspector, averaging, target curves | `Source/dsp/SpectrumAnalyzer.*`, `Source/ui/SpectrumView.h` |
 | True peak: 4x oversampling, polyphase FIR | `Source/dsp/TruePeakDetector.h` |
+| Decoded 5.1: ITU downmix, BS.1770 weights, room view | `Source/dsp/Downmix.h`, `Source/ui/SurroundView.h`, `Source/dsp/LoudnessMeter.*` |
 | PLR and clip counter | `Source/PluginProcessor.*`, `Source/PluginEditor.cpp` |
-| UI: spectrum, waterfall, meters, goniometer, oscilloscope, guides | `Source/ui/*` |
+| UI: spectrum, waterfall, meters, goniometer, oscilloscope, guides, 5.1 room view | `Source/ui/*` |
 | Reference: loading, analysis, one file, ORIG/REF, player, drag and drop | `Source/dsp/ReferenceAnalysis.h`, `Source/PluginProcessor.*` |
 | Update check | `Source/ui/UpdateChecker.h` |
 
@@ -79,7 +81,7 @@ cmake --build build -j$(nproc)
 ```
 
 JUCE (8.0.15) is fetched automatically with `FetchContent`. The built VST3 is
-copied to `~/.vst3/LudensScope.vst3`.
+copied to `~/.vst3/LudensScope Surround.vst3`.
 
 Optional calibration checks:
 
@@ -88,13 +90,16 @@ cmake --preset dev
 cmake --build --preset dev -j$(nproc)
 
 # LUFS (BS.1770-4) + true peak + LRA: 13 checks
-./build/LudensScopeLoudnessCalibration
+./build/LudensScopeSurroundLoudnessCalibration
+
+# 5.1 downmix, BS.1770 surround weights and LFE exclusion
+./build/LudensScopeSurroundSurround
 
 # spectrum calibration: a -6 dBFS sine should read about -6 dBFS
-./build/LudensScopeCalibration_artefacts/Release/LudensScopeCalibration
+./build/LudensScopeSurroundCalibration_artefacts/Release/LudensScopeSurroundCalibration
 
 # render the UI to PNG without a DAW (editor smoke test)
-./build/LudensScopeUiSnapshot_artefacts/Release/LudensScopeUiSnapshot
+./build/LudensScopeSurroundUiSnapshot_artefacts/Release/LudensScopeSurroundUiSnapshot
 # -> docs/ui-preview.png (or the path passed as the first argument)
 ```
 
@@ -106,7 +111,7 @@ cmake --build --preset dev -j$(nproc)
    the full range (20 Hz – 20 kHz). The `SPAN` button cycles 10/8/6/4/2/1
    octaves; the waterfall follows the visible range. Hover to read frequency,
    note, level, peak and the Q of the nearest peak (from its −3 dB width).
-   Below is the waterfall (~3/7/14 s of history); `FREEZE` stops it. Drag the
+   Below is the waterfall (~3/7/14 s of history); `FREEZE` holds the spectrum/waterfall only. Drag the
    divider to resize the waterfall, double-click to reset. The HUD pills at the
    top show the LOW/MID/HIGH energy balance. `GUIDES` opens a menu — Off or a
    genre zone set (General / EDM / Hip-Hop / Rock / Acoustic / Pop / Metal /
@@ -123,7 +128,7 @@ cmake --build --preset dev -j$(nproc)
    difference shading with a selectable second curve (next snapshot, REF FILE or
    live), the M/S side curve and PNG export of the whole view. Curve presets:
    `Save current curve` stores the averaged spectrum as a named target curve
-   (globally, in `~/.config/LudensScope/curve-presets.json`), `Load curve` draws
+   (globally, in `~/.config/LudensScopeSurround/curve-presets.json`), `Load curve` draws
    it as an amber dashed line with a TARGET chip, `Delete curve` removes it. The
    selected target curve is stored in the project.
 3. LOUDNESS: momentary (400 ms), short-term (3 s), integrated (gated at
@@ -158,7 +163,15 @@ cmake --build --preset dev -j$(nproc)
    file is reloaded, and if it is missing the curve remains for comparison.
    Files longer than 10 minutes are truncated.
 
-   `FREEZE` stops the frame; `RESET` clears peaks, loudness, the selected
+   In 5.1 the vector scope is replaced by a room view of the six decoded
+   channels (L, R, C, LFE, Ls, Rs) with levels and peak hold. PRO can select
+   `ALL` or one channel for the FFT, waterfall and oscilloscope; VU, loudness
+   and true peak always use the fixed ITU stereo downmix (LFE excluded).
+   The channels must already be decoded — the plugin does not decode AC-3
+   itself; feed it six discrete channels from an external ffmpeg bridge.
+
+   `FREEZE` holds only the spectrum and waterfall; scopes and meters keep
+   updating. `RESET` clears peaks, loudness, the selected
    snapshot, the reference and the counters; `UNDO` restores the state from
    before the last reset (integrated loudness, LRA, snapshot, reference and
    counters). `OPTIONS → Export` also exports snapshots to CSV (bin, frequency,
@@ -178,7 +191,7 @@ duplication is only for the spectrum/vector analysis.
 
 The `THEME` button in the top-right switches seven interface palettes:
 **Blue** (current), **Dark**, **Light**, **Magenta**, **Green**, **Red**,
-**Orange**. The choice is global: it is stored in LudensScope's settings and
+**Orange**. The choice is global: it is stored in LudensScope Surround's settings and
 applied to every open instance; the light theme re-tints the
 logo and curves automatically, and the waterfall follows the palette. The
 right-rail buttons, `THEME`, ORIG/REF and the transport scale with the
@@ -213,13 +226,13 @@ the VU reads average loudness, not peaks - use TRUE PEAK for peaks.
 
 ## Install from a release
 
-- Linux: `sudo apt install ./LudensScope-linux.deb` — VST3 to `/usr/lib/vst3`,
-  CLAP to `/usr/lib/clap`, standalone app in the menu (`ludensscope`).
-- macOS: `LudensScope-macos.pkg` — VST3/AU/CLAP to `/Library/Audio/Plug-Ins`,
+- Linux: `sudo apt install ./LudensScopeSurround-linux.deb` — VST3 to `/usr/lib/vst3`,
+  CLAP to `/usr/lib/clap`, standalone app in the menu (`ludensscope-surround`).
+- macOS: `LudensScopeSurround-macos.pkg` — VST3/AU/CLAP to `/Library/Audio/Plug-Ins`,
   AAX to `/Library/Application Support/Avid/Audio/Plug-Ins`, the app to `/Applications`.
-- Windows: `LudensScope-windows.exe` — VST3 to `Common Files\VST3`, CLAP to
+- Windows: `LudensScopeSurround-windows.exe` — VST3 to `Common Files\VST3`, CLAP to
   `Common Files\CLAP`, AAX to `Common Files\Avid\Audio\Plug-Ins`, the standalone
-  app to `Program Files\LudensScope`.
+  app to `Program Files\LudensScope Surround`.
 - [Komi Store](https://komistore.app/) picks the release up from the installable
   assets (`.deb` / `.pkg` / `.exe`) automatically.
 
@@ -267,9 +280,9 @@ cmake --build --preset macos-universal -j$(sysctl -n hw.ncpu)
 
 # local ad-hoc signature (required on arm64)
 codesign --force --deep --sign - \
-  build/LudensScope_artefacts/Release/VST3/LudensScope.vst3
+  build/LudensScopeSurround_artefacts/Release/VST3/LudensScope Surround.vst3
 codesign --force --deep --sign - \
-  build/LudensScope_artefacts/Release/AU/LudensScope.component
+  build/LudensScopeSurround_artefacts/Release/AU/LudensScope Surround.component
 ```
 
 `COPY_PLUGIN_AFTER_BUILD` installs the VST3 into
@@ -279,7 +292,7 @@ codesign --force --deep --sign - \
 
 In Cubase: `Studio → VST Plug-in Manager → Rescan`, or just restart Cubase. The
 plugin appears under `Analyzer`. For Logic/GarageBand restart the app; check the
-AU with `auval -v aufx LDSC LDNS`.
+AU with `auval -v aufx LDSR LDSR`.
 
 Notes:
 
@@ -292,7 +305,7 @@ Notes:
 
 ## Limitations
 
-- Stereo only (2 in / 2 out), VST3 and AUv2 formats.
+- Mono, stereo and decoded 5.1 (6 in / 6 out), VST3 and AUv2 formats.
 - No general plugin presets; target curves are global presets.
 - AAX and AUv3 are not built.
 - Updates only work through a published GitHub Release; there is no automatic
@@ -302,7 +315,7 @@ Notes:
 
 Holiday offer: PRO is a one-time EUR 19 (was EUR 29) PayPal purchase.
 After payment email alek.ludens@gmail.com with the receipt and you will receive
-a licence key. The licence is offline and includes 1.x updates. Keys issued
+a licence key. The licence is offline and includes 2.x updates. Keys issued
 from 1.0.4 onward activate on up to 2 machines; earlier keys stay unrestricted.
 
 [Buy PRO - EUR 19 (was EUR 29)](https://www.paypal.com/ncp/payment/9LQYYZMR7TW7G)
@@ -312,7 +325,7 @@ directory automatically, or email for a key.
 
 ## Support the project
 
-If LudensScope saves you time, you can support development via PayPal:
+If LudensScope Surround saves you time, you can support development via PayPal:
 
 [![Donate](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white)](https://www.paypal.com/donate/?business=0eskimo0%40gmail.com&item_name=LudensScope&currency_code=USD)
 

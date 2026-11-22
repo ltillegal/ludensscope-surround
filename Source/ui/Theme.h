@@ -109,7 +109,7 @@ namespace theme
             return settingsFileOverride();
 
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-            .getChildFile ("LudensScope")
+            .getChildFile ("LudensScopeSurround")
             .getChildFile ("theme.txt");
     }
 

@@ -15,8 +15,8 @@
 
 set -euo pipefail
 
-INPUT=${1:-build/LudensScope_artefacts/Release/AAX/LudensScope.aaxplugin}
-OUTPUT=${2:-dist/LudensScope.aaxplugin}
+INPUT=${1:-build/LudensScopeSurround_artefacts/Release/AAX/LudensScope Surround.aaxplugin}
+OUTPUT=${2:-dist/LudensScope Surround.aaxplugin}
 
 WRAP=${AAX_WRAP_TOOL:-$(command -v wraptool || true)}
 SIGN_ID=${AAX_SIGN_ID:?set AAX_SIGN_ID (PACE DSIG identity)}

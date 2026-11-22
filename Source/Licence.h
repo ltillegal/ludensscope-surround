@@ -68,7 +68,7 @@ public:
         const auto parts = juce::StringArray::fromTokens (key.trim(), "|", "");
         if (parts.size() != 3 || parts[0] != "LS1")
         {
-            info.error = "Not a LudensScope licence key.";
+            info.error = "Not a LudensScope Surround licence key.";
             return info;
         }
 
@@ -80,7 +80,7 @@ public:
         const auto fields = juce::StringArray::fromTokens (payload, "|", "");
         if (fields.size() != 4 || fields[0] != kProduct || fields[1] != "FULL")
         {
-            info.error = "Licence payload is not a LudensScope PRO key.";
+            info.error = "Licence payload is not a LudensScope Surround PRO key.";
             return info;
         }
 
@@ -137,21 +137,40 @@ public:
     }
 
     //==============================================================================
-    static juce::File file()
+    static juce::File configDirectory()
     {
        #ifdef LUDENSCOPE_TEST_HOOKS
         if (licenceDirectoryOverride.isDirectory())
-            return licenceDirectoryOverride.getChildFile ("licence.txt");
+            return licenceDirectoryOverride;
        #endif
 
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                   .getChildFile ("LudensScope")
-                   .getChildFile ("licence.txt");
+                   .getChildFile ("LudensScopeSurround");
+    }
+
+    static juce::File file()
+    {
+        return configDirectory().getChildFile ("licence.txt");
     }
 
     static juce::String load()
     {
-        return file().loadFileAsString().trim();
+        const auto key = file().loadFileAsString().trim();
+        if (key.isNotEmpty())
+            return key;
+
+       #ifdef LUDENSCOPE_TEST_HOOKS
+        // A test override is authoritative: do not read the real legacy folder.
+        if (licenceDirectoryOverride.isDirectory())
+            return {};
+       #endif
+
+        // Read-only fallback: an existing 1.0.x key keeps working, but this
+        // product never writes into the old configuration directory.
+        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                   .getChildFile ("LudensScope")
+                   .getChildFile ("licence.txt")
+                   .loadFileAsString().trim();
     }
 
     static void save (const juce::String& key)
@@ -408,9 +427,7 @@ private:
 
     static bool legacyInstalled()
     {
-        auto dir = file().getParentDirectory();
-        if (! dir.isDirectory())
-            return false;
+        const auto dir = configDirectory();
 
         if (dir.getChildFile ("legacy.txt").existsAsFile())
             return true;
@@ -418,15 +435,23 @@ private:
         if (dir.getChildFile ("licence.txt").existsAsFile())
             return false;
 
-        if (dir.getChildFile ("theme.txt").existsAsFile()
-            || dir.getChildFile ("curve-presets.json").existsAsFile())
-        {
-            dir.getChildFile ("legacy.txt")
-               .replaceWithText ("Grandfathered PRO licence (0.4.x install)\n");
-            return true;
-        }
+       #ifdef LUDENSCOPE_TEST_HOOKS
+        if (licenceDirectoryOverride.isDirectory())
+            return false;
+       #endif
 
-        return false;
+        // Grandfathered 0.4.x installs are still recognised read-only.
+        const auto oldDir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                                .getChildFile ("LudensScope");
+
+        if (oldDir.getChildFile ("legacy.txt").existsAsFile())
+            return true;
+
+        if (oldDir.getChildFile ("licence.txt").existsAsFile())
+            return false;
+
+        return oldDir.getChildFile ("theme.txt").existsAsFile()
+            || oldDir.getChildFile ("curve-presets.json").existsAsFile();
     }
 
     static void refresh()

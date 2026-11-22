@@ -67,32 +67,33 @@ jobs:
           mkdir -p pkgroot/DEBIAN pkgroot/usr/lib/vst3 pkgroot/usr/lib/clap \
                    pkgroot/usr/bin pkgroot/usr/share/applications \
                    pkgroot/usr/share/icons/hicolor/256x256/apps
-          cp -R build/LudensScope_artefacts/Release/VST3/LudensScope.vst3 pkgroot/usr/lib/vst3/
-          cp -R build/LudensScope_artefacts/Release/CLAP/LudensScope.clap pkgroot/usr/lib/clap/
-          install -Dm755 build/LudensScope_artefacts/Release/Standalone/LudensScope pkgroot/usr/bin/ludensscope
-          install -Dm644 Source/assets/ludens_logo.png pkgroot/usr/share/icons/hicolor/256x256/apps/ludensscope.png
-          cat > pkgroot/usr/share/applications/ludensscope.desktop <<EOF
+          cp -R "build/LudensScopeSurround_artefacts/Release/VST3/LudensScope Surround.vst3" pkgroot/usr/lib/vst3/
+          cp -R "build/LudensScopeSurround_artefacts/Release/CLAP/LudensScope Surround.clap" pkgroot/usr/lib/clap/
+          install -Dm755 "build/LudensScopeSurround_artefacts/Release/Standalone/LudensScope Surround" pkgroot/usr/bin/ludensscope-surround
+          install -Dm644 Source/assets/ludens_logo.png pkgroot/usr/share/icons/hicolor/256x256/apps/ludensscope-surround.png
+          cat > pkgroot/usr/share/applications/ludensscope-surround.desktop <<EOF
           [Desktop Entry]
-          Name=LudensScope
-          Comment=Stereo audio analyzer
-          Exec=ludensscope
-          Icon=ludensscope
+          Name=LudensScope Surround
+          Comment=Stereo and decoded 5.1 audio analyzer
+          Exec=ludensscope-surround
+          Icon=ludensscope-surround
           Terminal=false
           Type=Application
           Categories=AudioVideo;Audio;
           EOF
           cat > pkgroot/DEBIAN/control <<EOF
-          Package: ludensscope
+          Package: ludensscope-surround
           Version: ${LUDENSCOPE_VERSION}
           Section: sound
           Priority: optional
           Architecture: amd64
           Maintainer: ltillegal <alek.ludens@gmail.com>
           Depends: libasound2 | libasound2t64, libcurl4 | libcurl4t64, libfreetype6, libx11-6, libxext6, libxinerama1, libxrandr2, libxrender1, libgl1
-          Description: Stereo audio analyzer (VST3, CLAP, standalone)
-           Spectrum, BS.1770 loudness, true peak, ORIG/REF reference, gain staging and VU.
+          Description: Stereo and decoded 5.1 audio analyzer (VST3, CLAP, standalone)
+           Spectrum, BS.1770 loudness, true peak, 5.1 room view, ORIG/REF reference,
+           gain staging and VU.
           EOF
-          dpkg-deb --build --root-owner-group pkgroot LudensScope-linux.deb
+          dpkg-deb --build --root-owner-group pkgroot LudensScopeSurround-linux.deb
 
       - name: Package (macOS .pkg)
         if: runner.os == 'macOS'
@@ -100,11 +101,11 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          for bundle in build/LudensScope_artefacts/Release/VST3/LudensScope.vst3 \
-                        build/LudensScope_artefacts/Release/AU/LudensScope.component \
-                        build/LudensScope_artefacts/Release/CLAP/LudensScope.clap \
-                        build/LudensScope_artefacts/Release/AAX/LudensScope.aaxplugin \
-                        build/LudensScope_artefacts/Release/Standalone/LudensScope.app; do
+          for bundle in "build/LudensScopeSurround_artefacts/Release/VST3/LudensScope Surround.vst3" \
+                        "build/LudensScopeSurround_artefacts/Release/AU/LudensScope Surround.component" \
+                        "build/LudensScopeSurround_artefacts/Release/CLAP/LudensScope Surround.clap" \
+                        "build/LudensScopeSurround_artefacts/Release/AAX/LudensScope Surround.aaxplugin" \
+                        "build/LudensScopeSurround_artefacts/Release/Standalone/LudensScope Surround.app"; do
             if [ -e "$bundle" ]; then
               codesign --force --deep --sign - "$bundle"
             fi
@@ -115,13 +116,13 @@ jobs:
                    pkgroot/Library/Audio/Plug-Ins/CLAP \
                    "pkgroot/Library/Application Support/Avid/Audio/Plug-Ins" \
                    pkgroot/Applications
-          cp -R build/LudensScope_artefacts/Release/VST3/LudensScope.vst3 pkgroot/Library/Audio/Plug-Ins/VST3/
-          cp -R build/LudensScope_artefacts/Release/AU/LudensScope.component pkgroot/Library/Audio/Plug-Ins/Components/
-          cp -R build/LudensScope_artefacts/Release/CLAP/LudensScope.clap pkgroot/Library/Audio/Plug-Ins/CLAP/
-          cp -R build/LudensScope_artefacts/Release/AAX/LudensScope.aaxplugin "pkgroot/Library/Application Support/Avid/Audio/Plug-Ins/"
-          cp -R build/LudensScope_artefacts/Release/Standalone/LudensScope.app pkgroot/Applications/
-          pkgbuild --root pkgroot --identifier com.ltillegal.ludensscope \
-                   --version "$LUDENSCOPE_VERSION" --install-location / LudensScope-macos.pkg
+          cp -R "build/LudensScopeSurround_artefacts/Release/VST3/LudensScope Surround.vst3" pkgroot/Library/Audio/Plug-Ins/VST3/
+          cp -R "build/LudensScopeSurround_artefacts/Release/AU/LudensScope Surround.component" pkgroot/Library/Audio/Plug-Ins/Components/
+          cp -R "build/LudensScopeSurround_artefacts/Release/CLAP/LudensScope Surround.clap" pkgroot/Library/Audio/Plug-Ins/CLAP/
+          cp -R "build/LudensScopeSurround_artefacts/Release/AAX/LudensScope Surround.aaxplugin" "pkgroot/Library/Application Support/Avid/Audio/Plug-Ins/"
+          cp -R "build/LudensScopeSurround_artefacts/Release/Standalone/LudensScope Surround.app" pkgroot/Applications/
+          pkgbuild --root pkgroot --identifier com.ltillegal.ludensscopesurround \
+                   --version "$LUDENSCOPE_VERSION" --install-location / LudensScopeSurround-macos.pkg
 
       - name: Package (Windows .exe)
         if: runner.os == 'Windows'
@@ -132,8 +133,8 @@ jobs:
           if (!(Test-Path $nsis)) { $nsis = "C:\Program Files\NSIS\makensis.exe" }
           $script = @'
           !include "MUI2.nsh"
-          Name "LudensScope"
-          OutFile "LudensScope-windows.exe"
+          Name "LudensScope Surround"
+          OutFile "LudensScopeSurround-windows.exe"
           InstallDir "$COMMONFILES64\VST3"
           RequestExecutionLevel admin
           Unicode true
@@ -144,39 +145,39 @@ jobs:
           !insertmacro MUI_LANGUAGE "English"
           Section "VST3" SecVst3
             SetOutPath "$INSTDIR"
-            File /r "build\LudensScope_artefacts\Release\VST3\LudensScope.vst3"
-            WriteUninstaller "$INSTDIR\LudensScope-uninstall.exe"
+            File /r "build\LudensScopeSurround_artefacts\Release\VST3\LudensScope Surround.vst3"
+            WriteUninstaller "$INSTDIR\LudensScopeSurround-uninstall.exe"
           SectionEnd
           Section "CLAP" SecClap
             SetOutPath "$COMMONFILES64\CLAP"
-            File /r "build\LudensScope_artefacts\Release\CLAP\LudensScope.clap"
+            File /r "build\LudensScopeSurround_artefacts\Release\CLAP\LudensScope Surround.clap"
           SectionEnd
           Section "AAX (Pro Tools)" SecAax
             SetOutPath "$COMMONFILES64\Avid\Audio\Plug-Ins"
-            File /r "build\LudensScope_artefacts\Release\AAX\LudensScope.aaxplugin"
+            File /r "build\LudensScopeSurround_artefacts\Release\AAX\LudensScope Surround.aaxplugin"
           SectionEnd
           Section "Standalone" SecStandalone
-            SetOutPath "$PROGRAMFILES64\LudensScope"
-            File "build\LudensScope_artefacts\Release\Standalone\LudensScope.exe"
-            CreateShortcut "$SMPROGRAMS\LudensScope.lnk" "$PROGRAMFILES64\LudensScope\LudensScope.exe"
+            SetOutPath "$PROGRAMFILES64\LudensScope Surround"
+            File "build\LudensScopeSurround_artefacts\Release\Standalone\LudensScope Surround.exe"
+            CreateShortcut "$SMPROGRAMS\LudensScope Surround.lnk" "$PROGRAMFILES64\LudensScope Surround\LudensScope Surround.exe"
           SectionEnd
           Section "Uninstall"
-            Delete "$INSTDIR\LudensScope-uninstall.exe"
-            RMDir /r "$INSTDIR\LudensScope.vst3"
-            Delete "$COMMONFILES64\CLAP\LudensScope.clap"
-            RMDir /r "$COMMONFILES64\Avid\Audio\Plug-Ins\LudensScope.aaxplugin"
-            RMDir /r "$PROGRAMFILES64\LudensScope"
-            Delete "$SMPROGRAMS\LudensScope.lnk"
+            Delete "$INSTDIR\LudensScopeSurround-uninstall.exe"
+            RMDir /r "$INSTDIR\LudensScope Surround.vst3"
+            Delete "$COMMONFILES64\CLAP\LudensScope Surround.clap"
+            RMDir /r "$COMMONFILES64\Avid\Audio\Plug-Ins\LudensScope Surround.aaxplugin"
+            RMDir /r "$PROGRAMFILES64\LudensScope Surround"
+            Delete "$SMPROGRAMS\LudensScope Surround.lnk"
           SectionEnd
           '@
           Set-Content -Path installer.nsi -Value $script -Encoding UTF8
           & $nsis installer.nsi
-          if (!(Test-Path LudensScope-windows.exe)) { exit 1 }
+          if (!(Test-Path LudensScopeSurround-windows.exe)) { exit 1 }
 
       - uses: actions/upload-artifact@v7
         with:
           name: package-${{ matrix.name }}
-          path: LudensScope-*
+          path: LudensScopeSurround-*
           if-no-files-found: error
 
   release:

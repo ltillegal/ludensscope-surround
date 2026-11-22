@@ -7,9 +7,9 @@ if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
 endif()
 
 if(NOT DEFINED LUDENSCOPE_VERSION)
-  set(LUDENSCOPE_VERSION "1.0.9")
+  set(LUDENSCOPE_VERSION "2.1.0")
 endif()
-project(LudensScope VERSION ${LUDENSCOPE_VERSION} LANGUAGES C CXX)
+project(LudensScopeSurround VERSION ${LUDENSCOPE_VERSION} LANGUAGES C CXX)
 add_compile_definitions (LUDENSCOPE_VERSION_STRING="${LUDENSCOPE_VERSION}")
 
 enable_testing()
@@ -33,12 +33,12 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(JUCE)
 
-juce_add_binary_data(LudensScopeBinaryData SOURCES
+juce_add_binary_data(LudensScopeSurroundBinaryData SOURCES
   Source/assets/ludens_logo.png)
 
-set(LUDENSCOPE_FORMATS VST3 AU Standalone)
+set(LUDENSCOPE_SURROUND_FORMATS VST3 AU Standalone)
 if(APPLE OR WIN32)
-  list(APPEND LUDENSCOPE_FORMATS AAX)
+  list(APPEND LUDENSCOPE_SURROUND_FORMATS AAX)
 endif()
 
 set(LUDENSCOPE_COPY_PLUGIN TRUE)
@@ -46,14 +46,14 @@ if(DEFINED ENV{CI})
   set(LUDENSCOPE_COPY_PLUGIN FALSE)
 endif()
 
-juce_add_plugin(LudensScope
-  COMPANY_NAME "LudensScope"
-  BUNDLE_ID "local.ludensscope"
-  PLUGIN_MANUFACTURER_CODE LDNS
-  PLUGIN_CODE LDSC
-  FORMATS ${LUDENSCOPE_FORMATS}
-  PRODUCT_NAME "LudensScope"
-  DESCRIPTION "Stereo spectrum, loudness and scope analyzer"
+juce_add_plugin(LudensScopeSurround
+  COMPANY_NAME "LudensScope Surround"
+  BUNDLE_ID "local.ludensscopesurround"
+  PLUGIN_MANUFACTURER_CODE LDSR
+  PLUGIN_CODE LDSR
+  FORMATS ${LUDENSCOPE_SURROUND_FORMATS}
+  PRODUCT_NAME "LudensScope Surround"
+  DESCRIPTION "Stereo and decoded 5.1 spectrum, loudness and scope analyzer"
   IS_SYNTH FALSE
   NEEDS_MIDI_INPUT FALSE
   NEEDS_MIDI_OUTPUT FALSE
@@ -63,26 +63,26 @@ juce_add_plugin(LudensScope
   NEEDS_CURL TRUE
   VST3_CATEGORIES "Fx Analyzer")
 
-target_sources(LudensScope PRIVATE
+target_sources(LudensScopeSurround PRIVATE
   Source/PluginProcessor.cpp
   Source/PluginEditor.cpp
   Source/dsp/LoudnessMeter.cpp
   Source/dsp/SpectrumAnalyzer.cpp)
 
-target_include_directories(LudensScope PRIVATE Source)
+target_include_directories(LudensScopeSurround PRIVATE Source)
 
-target_compile_definitions(LudensScope PUBLIC
+target_compile_definitions(LudensScopeSurround PUBLIC
   JUCE_WEB_BROWSER=0
   JUCE_MODAL_LOOPS_PERMITTED=1
   JUCE_VST3_CAN_REPLACE_VST2=0
   JUCE_DISPLAY_SPLASH_SCREEN=0
   JUCE_REPORT_APP_USAGE=0)
 
-target_link_libraries(LudensScope PRIVATE
+target_link_libraries(LudensScopeSurround PRIVATE
   juce::juce_audio_utils
   juce::juce_dsp
   juce::juce_cryptography
-  LudensScopeBinaryData
+  LudensScopeSurroundBinaryData
   PUBLIC
   juce::juce_recommended_config_flags
   juce::juce_recommended_warning_flags)
@@ -96,54 +96,61 @@ FetchContent_Declare(clap_juce_extensions
 
 FetchContent_MakeAvailable(clap_juce_extensions)
 
-clap_juce_extensions_plugin(TARGET LudensScope
-  CLAP_ID "com.ltillegal.ludensscope"
-  CLAP_FEATURES audio-effect analyzer stereo utility)
+clap_juce_extensions_plugin(TARGET LudensScopeSurround
+  CLAP_ID "com.ltillegal.ludensscopesurround"
+  CLAP_FEATURES audio-effect analyzer stereo surround utility)
 
 option(LUDENSCOPE_BUILD_TESTS "Build the offline calibration test" OFF)
 
 if(LUDENSCOPE_BUILD_TESTS)
-  juce_add_console_app(LudensScopeCalibration PRODUCT_NAME "LudensScopeCalibration")
-  target_sources(LudensScopeCalibration PRIVATE
+  juce_add_console_app(LudensScopeSurroundCalibration PRODUCT_NAME "LudensScopeSurroundCalibration")
+  target_sources(LudensScopeSurroundCalibration PRIVATE
     Tests/Calibration.cpp
     Source/dsp/SpectrumAnalyzer.cpp)
-  target_include_directories(LudensScopeCalibration PRIVATE Source)
-  target_link_libraries(LudensScopeCalibration PRIVATE
+  target_include_directories(LudensScopeSurroundCalibration PRIVATE Source)
+  target_link_libraries(LudensScopeSurroundCalibration PRIVATE
     juce::juce_dsp
     juce::juce_recommended_config_flags)
 
-  add_executable(LudensScopeLoudnessCalibration
+  add_executable(LudensScopeSurroundLoudnessCalibration
     Tests/LoudnessCalibration.cpp
     Source/dsp/LoudnessMeter.cpp)
-  target_include_directories(LudensScopeLoudnessCalibration PRIVATE Source)
-  target_compile_features(LudensScopeLoudnessCalibration PRIVATE cxx_std_17)
+  target_include_directories(LudensScopeSurroundLoudnessCalibration PRIVATE Source)
+  target_compile_features(LudensScopeSurroundLoudnessCalibration PRIVATE cxx_std_17)
 
-  juce_add_console_app(LudensScopeUiSnapshot PRODUCT_NAME "LudensScopeUiSnapshot" NEEDS_CURL TRUE)
-  target_sources(LudensScopeUiSnapshot PRIVATE
+  add_executable(LudensScopeSurroundSurround
+    Tests/Surround.cpp
+    Source/dsp/LoudnessMeter.cpp)
+  target_include_directories(LudensScopeSurroundSurround PRIVATE Source)
+  target_compile_features(LudensScopeSurroundSurround PRIVATE cxx_std_17)
+
+  juce_add_console_app(LudensScopeSurroundUiSnapshot PRODUCT_NAME "LudensScopeSurroundUiSnapshot" NEEDS_CURL TRUE)
+  target_sources(LudensScopeSurroundUiSnapshot PRIVATE
     Tests/UiSnapshot.cpp
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
     Source/dsp/LoudnessMeter.cpp
     Source/dsp/SpectrumAnalyzer.cpp)
-  target_include_directories(LudensScopeUiSnapshot PRIVATE Source)
-  target_compile_definitions(LudensScopeUiSnapshot PRIVATE
+  target_include_directories(LudensScopeSurroundUiSnapshot PRIVATE Source)
+  target_compile_definitions(LudensScopeSurroundUiSnapshot PRIVATE
     JUCE_STANDALONE_APPLICATION=1
     JUCE_MODAL_LOOPS_PERMITTED=1
     JUCE_WEB_BROWSER=0
     LUDENSCOPE_TEST_HOOKS=1)
-  target_link_libraries(LudensScopeUiSnapshot PRIVATE
+  target_link_libraries(LudensScopeSurroundUiSnapshot PRIVATE
     juce::juce_audio_utils
     juce::juce_dsp
     juce::juce_cryptography
-    LudensScopeBinaryData
+    LudensScopeSurroundBinaryData
     juce::juce_recommended_config_flags)
 
-  add_test(NAME loudness COMMAND LudensScopeLoudnessCalibration)
-  add_test(NAME spectrum COMMAND LudensScopeCalibration)
+  add_test(NAME loudness COMMAND LudensScopeSurroundLoudnessCalibration)
+  add_test(NAME surround COMMAND LudensScopeSurroundSurround)
+  add_test(NAME spectrum COMMAND LudensScopeSurroundCalibration)
 
   # The UI snapshot needs a display (Xvfb on Linux); hosted macOS/Windows
   # runners do not provide a GUI session for this.
   if(UNIX AND NOT APPLE)
-    add_test(NAME ui_snapshot COMMAND LudensScopeUiSnapshot)
+    add_test(NAME ui_snapshot COMMAND LudensScopeSurroundUiSnapshot)
   endif()
 endif()

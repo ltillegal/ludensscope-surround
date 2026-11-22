@@ -41,6 +41,9 @@ jobs:
       - name: Test loudness
         run: ctest --test-dir build --output-on-failure -C Release -R "^loudness$"
 
+      - name: Test surround
+        run: ctest --test-dir build --output-on-failure -C Release -R "^surround$"
+
       - name: Test spectrum
         run: ctest --test-dir build --output-on-failure -C Release -R "^spectrum$"
 
@@ -51,8 +54,8 @@ jobs:
       - name: Upload artefacts
         uses: actions/upload-artifact@v4
         with:
-          name: ludensscope-${{ matrix.name }}
+          name: ludensscope-surround-${{ matrix.name }}
           if-no-files-found: ignore
           path: |
-            build/LudensScope_artefacts/Release/VST3/LudensScope.vst3
-            build/LudensScope_artefacts/Release/AU/LudensScope.component
+            build/LudensScopeSurround_artefacts/Release/VST3/LudensScope Surround.vst3
+            build/LudensScopeSurround_artefacts/Release/AU/LudensScope Surround.component

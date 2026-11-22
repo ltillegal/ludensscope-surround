@@ -6,8 +6,10 @@
 #include <cmath>
 #include <cstdint>
 
-// Stereo loudness meter implementing ITU-R BS.1770-4 (K-weighting, gated
-// integrated loudness, momentary and short-term windows).
+// Loudness meter implementing ITU-R BS.1770-4 (K-weighting, gated integrated
+// loudness, momentary and short-term windows). Supports mono, stereo and
+// decoded 5.1: L, R and C are summed with unity gain, Ls/Rs with +3 dB and
+// LFE is excluded from the loudness measurement.
 //
 // All signal processing happens on the audio thread. Results are published to
 // the UI through lock-free atomics, so the editor can read them at any time.
@@ -19,6 +21,9 @@ public:
     void resetIntegrated() noexcept;
     void process (const float* left, const float* right, int numSamples) noexcept;
     void processMono (const float* left, int numSamples) noexcept;
+
+    // channels must point at L, R, C, LFE, Ls, Rs (LFE may be null).
+    void processSurround (const float* const* channels, int numSamples) noexcept;
 
     float momentaryLufs()  const noexcept { return momentaryValue.load (std::memory_order_relaxed); }
     float shortTermLufs()  const noexcept { return shortTermValue.load (std::memory_order_relaxed); }
@@ -64,13 +69,16 @@ private:
     float meanOfLast (const std::array<float, windowSubBlocks>& values, int count) const noexcept;
     float computeIntegrated() const noexcept;
 
-    Biquad preL, preR, rlbL, rlbR;
+    Biquad preL, preR, preC, preLs, preRs;
+    Biquad rlbL, rlbR, rlbC, rlbLs, rlbRs;
 
     double sampleRate = 48000.0;
     int samplesPerSubBlock = 4800;
     int subBlockCounter = 0;
     double sumL = 0.0, sumR = 0.0;
-    bool monoMode = false;
+
+    // 0 = stereo, 1 = mono, 2 = 5.1 surround.
+    int channelMode = 0;
 
     std::array<float, windowSubBlocks> blockMsL {}, blockMsR {};
     int blockWriteIndex = 0;

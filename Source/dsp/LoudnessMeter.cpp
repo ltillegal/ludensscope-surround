@@ -50,16 +50,29 @@ void LoudnessMeter::prepare (double newSampleRate) noexcept
         rlbL.a2 = rlbR.a2 = (float) ((1.0 - K / Q + K * K) / denom);
     }
 
+    preC = preL;
+    preLs = preL;
+    preRs = preL;
+    rlbC = rlbL;
+    rlbLs = rlbL;
+    rlbRs = rlbL;
+
     reset();
 }
 
 void LoudnessMeter::reset() noexcept
 {
-    monoMode = false;
+    channelMode = 0;
     preL.reset();
     preR.reset();
+    preC.reset();
+    preLs.reset();
+    preRs.reset();
     rlbL.reset();
     rlbR.reset();
+    rlbC.reset();
+    rlbLs.reset();
+    rlbRs.reset();
 
     subBlockCounter = 0;
     sumL = sumR = 0.0;
@@ -89,13 +102,9 @@ void LoudnessMeter::resetIntegrated() noexcept
 
 void LoudnessMeter::process (const float* left, const float* right, int numSamples) noexcept
 {
-    if (monoMode)
+    if (channelMode != 0)
     {
-        monoMode = false;
-        sumR = 0.0;
-        preR.reset();
-        rlbR.reset();
-        blockMsR.fill (0.0f);
+        reset();
     }
 
     for (int i = 0; i < numSamples; ++i)
@@ -113,13 +122,10 @@ void LoudnessMeter::process (const float* left, const float* right, int numSampl
 
 void LoudnessMeter::processMono (const float* left, int numSamples) noexcept
 {
-    if (! monoMode)
+    if (channelMode != 1)
     {
-        monoMode = true;
-        sumR = 0.0;
-        preR.reset();
-        rlbR.reset();
-        blockMsR.fill (0.0f);
+        reset();
+        channelMode = 1;
     }
 
     for (int i = 0; i < numSamples; ++i)
@@ -127,6 +133,40 @@ void LoudnessMeter::processMono (const float* left, int numSamples) noexcept
         const float yl = rlbL.process (preL.process (left[i]));
 
         sumL += (double) yl * (double) yl;
+
+        if (++subBlockCounter >= samplesPerSubBlock)
+            flushSubBlock();
+    }
+}
+
+void LoudnessMeter::processSurround (const float* const* channels, int numSamples) noexcept
+{
+    if (channelMode != 2)
+    {
+        reset();
+        channelMode = 2;
+    }
+
+    // L/R/C keep unity weight; surrounds are +3 dB; LFE is not measured.
+    constexpr double surroundWeight = 2.0; // power gain of a +3 dB amplitude gain
+
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const float l  = channels[0] != nullptr ? channels[0][i] : 0.0f;
+        const float r  = channels[1] != nullptr ? channels[1][i] : 0.0f;
+        const float c  = channels[2] != nullptr ? channels[2][i] : 0.0f;
+        const float ls = channels[4] != nullptr ? channels[4][i] : 0.0f;
+        const float rs = channels[5] != nullptr ? channels[5][i] : 0.0f;
+
+        const double yl  = rlbL.process  (preL.process  (l));
+        const double yr  = rlbR.process  (preR.process  (r));
+        const double yc  = rlbC.process  (preC.process  (c));
+        const double yls = rlbLs.process (preLs.process (ls));
+        const double yrs = rlbRs.process (preRs.process (rs));
+
+        sumL += yl * yl + yr * yr + yc * yc
+              + surroundWeight * (yls * yls + yrs * yrs);
+        sumR = 0.0;
 
         if (++subBlockCounter >= samplesPerSubBlock)
             flushSubBlock();

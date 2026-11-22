@@ -6,8 +6,8 @@
 #   $env:AAX_SIGN_ID="..."; $env:AAX_WRAP_CONFIG="..."; .\sign-aax-windows.ps1 [input] [output]
 
 param(
-    [string]$InputBundle = "build/LudensScope_artefacts/Release/AAX/LudensScope.aaxplugin",
-    [string]$OutputBundle = "dist/LudensScope.aaxplugin"
+    [string]$InputBundle = "build/LudensScopeSurround_artefacts/Release/AAX/LudensScope Surround.aaxplugin",
+    [string]$OutputBundle = "dist/LudensScope Surround.aaxplugin"
 )
 
 $ErrorActionPreference = "Stop"

@@ -25,7 +25,7 @@ public:
     static juce::File defaultFile()
     {
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-            .getChildFile ("LudensScope")
+            .getChildFile ("LudensScopeSurround")
             .getChildFile ("curve-presets.json");
     }
 

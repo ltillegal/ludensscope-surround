@@ -298,6 +298,106 @@ namespace
         LudensScopeLicence::setTestingUnlock (true);
         return ok;
     }
+
+    bool testSurroundLayout()
+    {
+        LudensScopeLicence::setTestingUnlock (true);
+
+        LudensScopeProcessor processor;
+
+        juce::AudioProcessor::BusesLayout layout;
+        layout.inputBuses.add (juce::AudioChannelSet::create5point1());
+        layout.outputBuses.add (juce::AudioChannelSet::create5point1());
+        processor.setBusesLayout (layout);
+        processor.setPlayConfigDetails (6, 6, 48000.0, 512);
+        processor.prepareToPlay (48000.0, 512);
+
+        const auto feed = [&] (float amplitude)
+        {
+            for (int block = 0; block < 40; ++block)
+            {
+                juce::AudioBuffer<float> buffer (6, 512);
+                juce::MidiBuffer midi;
+
+                for (int channel = 0; channel < 6; ++channel)
+                {
+                    const float scale = amplitude * (0.2f + 0.1f * (float) channel);
+
+                    for (int i = 0; i < 512; ++i)
+                    {
+                        const double t = (double) (block * 512 + i) / 48000.0;
+                        buffer.setSample (channel, i,
+                                          (float) (scale * std::sin (juce::MathConstants<double>::twoPi
+                                                                     * 1000.0 * t)));
+                    }
+                }
+
+                processor.processBlock (buffer, midi);
+            }
+        };
+
+        feed (1.0f);
+
+        std::unique_ptr<LudensScopeEditor> editor (
+            dynamic_cast<LudensScopeEditor*> (processor.createEditor()));
+        editor->setSize (1060, 700);
+        editor->setUiScalePercent (100);
+
+        SurroundView* surround = nullptr;
+        VectorScopeView* vector = nullptr;
+        juce::TextButton* freeze = nullptr;
+
+        for (auto* child : editor->getChildren())
+        {
+            if (auto* view = dynamic_cast<SurroundView*> (child))
+                surround = view;
+            if (auto* view = dynamic_cast<VectorScopeView*> (child))
+                vector = view;
+            if (auto* button = dynamic_cast<juce::TextButton*> (child))
+                if (button->getButtonText() == "FREEZE")
+                    freeze = button;
+        }
+
+        for (int i = 0; i < 4; ++i)
+            editor->timerCallback();
+
+        const bool layoutOk = surround != nullptr && vector != nullptr
+                           && surround->isVisible() && ! vector->isVisible();
+        std::printf ("5.1 layout: %s (surround view replaces vector scope)\n",
+                     layoutOk ? "ok" : "FAIL");
+
+        // Selecting a channel routes FFT/waterfall/scope and persists in state.
+        if (surround != nullptr)
+            surround->onChannelSelect (4);
+
+        const bool selectionOk = surround != nullptr
+                              && surround->getSelectedChannel() == 4
+                              && processor.getViewSettings().surroundChannel == 4;
+        std::printf ("5.1 channel selection: %s\n", selectionOk ? "ok" : "FAIL");
+
+        // FREEZE stops only the spectrum and waterfall: the 5.1 room meters
+        // must still follow the incoming audio.
+        const float before = surround != nullptr ? surround->getPeakDb (0) : -100.0f;
+
+        if (freeze != nullptr)
+            freeze->triggerClick();
+
+        feed (4.0f);
+
+        for (int i = 0; i < 4; ++i)
+            editor->timerCallback();
+
+        const float after = surround != nullptr ? surround->getPeakDb (0) : -100.0f;
+        const bool freezeOk = before > -60.0f && after > before + 6.0f;
+        std::printf ("5.1 meters while frozen: %.1f -> %.1f dB (%s)\n",
+                     before, after, freezeOk ? "ok" : "FAIL");
+
+        if (freeze != nullptr && freeze->getToggleState())
+            freeze->triggerClick();
+
+        editor.reset();
+        return layoutOk && selectionOk && freezeOk;
+    }
 }
 
 int main (int argc, char** argv)
@@ -1268,6 +1368,7 @@ int main (int argc, char** argv)
     const bool licenceOk = testLicence();
     const bool activationOk = testMachineActivation();
     const bool liteLayoutOk = testLiteLayout (argc > 1);
+    const bool surroundOk = testSurroundLayout();
 
     return clipped == 2 && undoOk && referenceOk && gainOk && seekOk
            && snapshotPersisted && settingsPersisted
@@ -1275,5 +1376,5 @@ int main (int argc, char** argv)
            && referencePersisted
            && viewPersisted && presetOk && slotsOk && slotBLoaded && soloOk && loopOk && waveformOk
            && vuFreezeOk && vuSparseOk && vuIdleOk && vuLayoutOk && licenceOk && activationOk
-           && liteLayoutOk ? 0 : 1;
+           && liteLayoutOk && surroundOk ? 0 : 1;
 }

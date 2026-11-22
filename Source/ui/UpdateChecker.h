@@ -29,7 +29,7 @@ inline juce::String readUrlTextWithTimeout (const juce::URL& url, int timeoutMs)
 {
     juce::WebInputStream web (url, false);
     web.withConnectionTimeout (2000);
-    web.withExtraHeaders ("User-Agent: LudensScope\r\n"
+    web.withExtraHeaders ("User-Agent: LudensScope Surround\r\n"
                           "Accept: application/vnd.github+json");
 
     if (! web.connect (nullptr))
@@ -101,7 +101,7 @@ inline UpdateInfo performUpdateCheck()
    #endif
 
     const auto jsonText = readUrlTextWithTimeout (
-        juce::URL ("https://api.github.com/repos/ltillegal/ludensscope/releases/latest"), 5000);
+        juce::URL ("https://api.github.com/repos/ltillegal/ludensscope-surround/releases/latest"), 5000);
 
     if (jsonText.isEmpty())
     {
@@ -162,7 +162,7 @@ class UpdateDownloader : public juce::ThreadWithProgressWindow
 {
 public:
     UpdateDownloader (UpdateInfo updateToInstall, juce::File destination)
-        : juce::ThreadWithProgressWindow ("Downloading LudensScope " + updateToInstall.latestVersion,
+        : juce::ThreadWithProgressWindow ("Downloading LudensScope Surround " + updateToInstall.latestVersion,
                                           true, true),
           update (std::move (updateToInstall)),
           dest (std::move (destination))
@@ -174,7 +174,7 @@ public:
     {
         const auto options = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
                                  .withConnectionTimeoutMs (5000)
-                                 .withExtraHeaders ("User-Agent: LudensScope");
+                                 .withExtraHeaders ("User-Agent: LudensScope Surround");
 
         auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory)
                         .getChildFile (update.assetName);

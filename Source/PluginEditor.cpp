@@ -13,7 +13,7 @@ namespace
 juce::File persistedUiStateFile()
 {
     return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-             .getChildFile ("LudensScope")
+             .getChildFile ("LudensScopeSurround")
              .getChildFile ("ui-state.bin");
 }
 
@@ -230,6 +230,7 @@ LudensScopeEditor::LudensScopeEditor (LudensScopeProcessor& p)
     addAndMakeVisible (spectrogramView);
     addAndMakeVisible (meterPanel);
     addAndMakeVisible (vectorScopeView);
+    addAndMakeVisible (surroundView);
     addAndMakeVisible (vuMeterView);
     addAndMakeVisible (oscilloscopeView);
 
@@ -339,6 +340,19 @@ LudensScopeEditor::LudensScopeEditor (LudensScopeProcessor& p)
 
     spectrumView.onGuideSolo = [this] (int index) { toggleGuideSolo (index); };
 
+    surroundView.onChannelSelect = [this] (int index)
+    {
+        if (! isFull())
+        {
+            showUnlockDialog();
+            return;
+        }
+
+        selectedSurroundChannel = juce::jlimit (0, surround::channelCount, index);
+        surroundView.setSelectedChannel (selectedSurroundChannel);
+        saveViewSettings();
+    };
+
     meterPanel.onTargetChange = [this] (float) { saveViewSettings(); };
     meterPanel.onResetIntegrated = [this] { processor.requestIntegratedReset(); };
     oscilloscopeView.onSettingsChanged = [this] { saveViewSettings(); };
@@ -355,7 +369,7 @@ LudensScopeEditor::LudensScopeEditor (LudensScopeProcessor& p)
     spanButton.setTooltip ("Frequency span in octaves (wheel over the spectrum zooms)");
     monoButton.setTooltip ("Meters and scopes use the mono sum; the spectrum is always the mono sum");
     captureButton.setTooltip ("Store the averaged spectrum in the selected snapshot slot");
-    freezeButton.setTooltip ("Freeze the spectrum, waterfall and meters");
+    freezeButton.setTooltip ("Freeze the spectrum and waterfall; scopes and meters keep running");
     resetButton.setTooltip ("Reset meters, the loaded reference and the selected snapshot");
 
     spectrumView.onRangeChange = [this] (float lowHz, float highHz)
@@ -392,6 +406,9 @@ LudensScopeEditor::LudensScopeEditor (LudensScopeProcessor& p)
     readLeft.resize (readChunk);
     readRight.resize (readChunk);
 
+    for (auto& channel : readSurround)
+        channel.resize (readChunk);
+
     preparedSampleRate = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
     analyzer.prepare (preparedSampleRate);
     sideAnalyzer.prepare (preparedSampleRate);
@@ -401,6 +418,7 @@ LudensScopeEditor::LudensScopeEditor (LudensScopeProcessor& p)
     applyViewSettings (processor.getViewSettings());
     applyReferenceSettings();
     lastStateRevision = processor.stateRevision();
+    refreshBusLayout();
 
     // Restore the saved UI scale together with a window that can hold it.
     if (uiScalePercent > 0)
@@ -502,7 +520,7 @@ void LudensScopeEditor::paint (juce::Graphics& g)
     auto header = getLocalBounds().reduced (14)
                       .removeFromTop (juce::roundToInt (36.0f * uiScale));
 
-    auto brand = header.removeFromLeft (juce::roundToInt (196.0f * uiScale));
+    auto brand = header.removeFromLeft (juce::roundToInt (246.0f * uiScale));
 
     const int logoSize = juce::roundToInt (32.0f * uiScale);
     auto logoArea = brand.removeFromLeft (juce::roundToInt (36.0f * uiScale))
@@ -513,13 +531,26 @@ void LudensScopeEditor::paint (juce::Graphics& g)
 
     brand.removeFromLeft (juce::roundToInt (8.0f * uiScale));
 
-    g.setFont (theme::boldFont (19.0f * uiScale));
+    g.setFont (theme::boldFont (17.5f * uiScale));
     g.setColour (theme::text);
-    g.drawText ("LudensScope", brand, juce::Justification::centredLeft);
+    g.drawText ("LudensScope Surround", brand, juce::Justification::centredLeft);
+
+    if (surroundActive)
+    {
+        auto badge = header.removeFromLeft (juce::roundToInt (34.0f * uiScale));
+
+        g.setColour (isFull() ? theme::accent : theme::hot);
+        g.fillRoundedRectangle (badge.toFloat().reduced (0.0f, juce::roundToInt (5.0f * uiScale)), 3.0f);
+        g.setColour (theme::bg);
+        g.setFont (theme::detailBoldFont (9.0f, uiScale));
+        g.drawText ("5.1", badge, juce::Justification::centred);
+        header.removeFromLeft (juce::roundToInt (6.0f * uiScale));
+    }
 
     g.setFont (theme::detailFont (9.5f, uiScale));
     g.setColour (theme::textDim);
-    g.drawText ("STEREO ANALYZER", header, juce::Justification::centredLeft);
+    g.drawText (surroundActive ? "DOLBY DIGITAL 5.1 ANALYZER" : "STEREO ANALYZER",
+                header, juce::Justification::centredLeft);
 
     if (isFull())
     {
@@ -573,6 +604,7 @@ void LudensScopeEditor::resized()
     spectrumView.setUiScale (uiScale);
     spectrogramView.setUiScale (uiScale);
     vectorScopeView.setUiScale (uiScale);
+    surroundView.setUiScale (uiScale);
     oscilloscopeView.setUiScale (uiScale);
     referenceStrip.setUiScale (uiScale);
     vuMeterView.setUiScale (uiScale);
@@ -685,7 +717,14 @@ void LudensScopeEditor::resized()
     auto vectorBounds = bottom.removeFromLeft (bottomHeight);
     bottom.removeFromLeft (gap);
 
-    vectorScopeView.setBounds (vectorBounds);
+    vectorScopeView.setVisible (! surroundActive);
+    surroundView.setVisible (surroundActive);
+    surroundView.setLocked (! isFull());
+
+    if (surroundActive)
+        surroundView.setBounds (vectorBounds);
+    else
+        vectorScopeView.setBounds (vectorBounds);
 
     // The VU meter keeps its narrower width, but shares the full row height
     // with the stereo image and the oscilloscope. Only its width is shrunk.
@@ -721,7 +760,37 @@ void LudensScopeEditor::timerCallback()
             applyReferenceSettings();
     }
 
-    const int numRead = processor.readSamples (readLeft.data(), readRight.data(), readChunk);
+    refreshBusLayout();
+
+    int numRead = 0;
+    const float* analysisLeft = readLeft.data();
+    const float* analysisRight = readRight.data();
+
+    if (surroundActive)
+    {
+        float* channels[surround::channelCount];
+
+        for (int c = 0; c < surround::channelCount; ++c)
+            channels[(size_t) c] = readSurround[(size_t) c].data();
+
+        numRead = processor.readSamplesSurround (channels, readChunk);
+
+        if (numRead > 0)
+        {
+            // VU, true peak and correlation stay on the fixed ITU stereo sum.
+            surround::downmixToStereo (channels, readLeft.data(), readRight.data(), numRead);
+            surroundView.setData (channels, numRead);
+
+            // FFT, waterfall and oscilloscope follow the selected channel.
+            if (selectedSurroundChannel > 0)
+                analysisLeft = analysisRight = channels[(size_t) (selectedSurroundChannel - 1)];
+        }
+    }
+    else
+    {
+        numRead = processor.readSamples (readLeft.data(), readRight.data(), readChunk);
+    }
+
     const bool audioActive = numRead > 0;
 
     // Mono check: sum the input for the analyzers without touching the DAW signal.
@@ -732,6 +801,8 @@ void LudensScopeEditor::timerCallback()
             const float mono = 0.5f * (readLeft[(size_t) i] + readRight[(size_t) i]);
             readLeft[(size_t) i] = readRight[(size_t) i] = mono;
         }
+
+        analysisLeft = analysisRight = readLeft.data();
     }
 
     float blockTruePeak = 0.0f;
@@ -754,9 +825,9 @@ void LudensScopeEditor::timerCallback()
         // FREEZE holds the spectrum and waterfall only; scopes and meters keep
         // following the audio.
         if (! frozen)
-            analyzer.push (left, right, numRead);
+            analyzer.push (analysisLeft, analysisRight, numRead);
 
-        appendScope (left, right, numRead);
+        appendScope (analysisLeft, analysisRight, numRead);
 
         double sumLL = 0.0, sumRR = 0.0, sumLR = 0.0;
 
@@ -1484,7 +1555,7 @@ void LudensScopeEditor::exportViewPng()
     pngChooser = std::make_unique<juce::FileChooser> (
         "Export view",
         juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
-            .getChildFile ("ludensscope.png"),
+            .getChildFile ("ludensscope-surround.png"),
         "*.png");
 
     pngChooser->launchAsync (juce::FileBrowserComponent::saveMode
@@ -1578,7 +1649,7 @@ void LudensScopeEditor::exportSnapshots()
     snapshotChooser = std::make_unique<juce::FileChooser> (
         "Export snapshots",
         juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
-            .getChildFile ("ludensscope-snapshots.csv"),
+            .getChildFile ("ludensscope-surround-snapshots.csv"),
         "*.csv");
 
     snapshotChooser->launchAsync (juce::FileBrowserComponent::saveMode
@@ -1799,6 +1870,9 @@ void LudensScopeEditor::applyViewSettings (const LudensScopeProcessor::ViewSetti
 
     meterPanel.setTarget (settings.targetLufs);
 
+    selectedSurroundChannel = juce::jlimit (0, surround::channelCount, settings.surroundChannel);
+    surroundView.setSelectedChannel (selectedSurroundChannel);
+
     oscilloscopeView.setWindowSamples (settings.oscWindow);
     oscilloscopeView.setVerticalGain (settings.oscGain);
 
@@ -1837,6 +1911,7 @@ void LudensScopeEditor::saveViewSettings()
     settings.uiScalePercent = uiScalePercent;
     settings.oscWindow = oscilloscopeView.getWindowSamples();
     settings.oscGain = oscilloscopeView.getVerticalGain();
+    settings.surroundChannel = selectedSurroundChannel;
 
     processor.setViewSettings (settings);
     persistUiState (processor);
@@ -1995,7 +2070,7 @@ void LudensScopeEditor::handleUpdateResult (const UpdateInfo& info)
     if (! info.available)
     {
         juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon,
-                                                "LudensScope",
+                                                "LudensScope Surround",
                                                 "You are up to date (" + info.currentVersion + ").");
         return;
     }
@@ -2009,7 +2084,7 @@ void LudensScopeEditor::handleUpdateResult (const UpdateInfo& info)
         juce::MessageBoxOptions()
             .withIconType (juce::MessageBoxIconType::InfoIcon)
             .withTitle ("Update available")
-            .withMessage ("LudensScope " + info.latestVersion + " is available (you have "
+            .withMessage ("LudensScope Surround " + info.latestVersion + " is available (you have "
                           + info.currentVersion + ").\n\n" + notes)
             .withButton ("Download")
             .withButton ("Release page")
@@ -2142,30 +2217,31 @@ void LudensScopeEditor::showUnlockDialog()
 
         juce::AlertWindow::showMessageBoxAsync (
             juce::MessageBoxIconType::InfoIcon,
-            "LudensScope " + status,
+            "LudensScope Surround " + status,
             LudensScopeLicence::isLegacy()
                 ? "Grandfathered PRO licence from a 0.4.x installation.\n\n"
-                  "Thank you for supporting LudensScope."
+                  "Thank you for supporting LudensScope Surround."
                 : "Licensed to: " + LudensScopeLicence::licensedEmail() + "\n\n"
                   "Offline licence, no account and no telemetry.\n"
-                  "Thank you for supporting LudensScope.");
+                  "Thank you for supporting LudensScope Surround.");
         return;
     }
 
     juce::String message =
-        "PRO adds the ORIG/REF reference analysis and transport, snapshot slots, "
-        "gain staging lines, all 7 themes, advanced FFT options, target curves "
+        "PRO adds decoded Dolby Digital 5.1 with six discrete channels, the "
+        "ORIG/REF reference analysis and transport, snapshot slots, gain "
+        "staging lines, all 7 themes, advanced FFT options, target curves "
         "and CSV export.\n\n"
         "Holiday offer: EUR 19 (was EUR 29) via PayPal. After payment email "
         "alek.ludens@gmail.com and you will receive a licence key. The licence "
-        "is offline, includes 1.x updates and, for keys issued from 1.0.4, is "
+        "is offline, includes 2.x updates and, for keys issued from 1.0.4, is "
         "activated on up to 2 machines.";
 
     if (LudensScopeLicence::isMachineLimitReached())
         message += "\n\n" + LudensScopeLicence::activationMessage();
 
     auto* aw = new juce::AlertWindow (
-        "Unlock LudensScope PRO", message, juce::MessageBoxIconType::NoIcon);
+        "Unlock LudensScope Surround PRO", message, juce::MessageBoxIconType::NoIcon);
 
     aw->addTextEditor ("key", LudensScopeLicence::load(), "Licence key");
     aw->addButton ("Unlock", 1, juce::KeyPress (juce::KeyPress::returnKey));
@@ -2185,7 +2261,7 @@ void LudensScopeEditor::showUnlockDialog()
 
                     juce::AlertWindow::showMessageBoxAsync (
                         juce::MessageBoxIconType::InfoIcon,
-                        "LudensScope PRO",
+                        "LudensScope Surround PRO",
                         "Thank you! PRO features are now unlocked.");
                 }
                 else
@@ -2204,12 +2280,31 @@ void LudensScopeEditor::showUnlockDialog()
         }), true);
 }
 
+void LudensScopeEditor::refreshBusLayout()
+{
+    const bool nowSurround = processor.getTotalNumInputChannels() >= surround::channelCount;
+
+    if (nowSurround == surroundActive)
+        return;
+
+    surroundActive = nowSurround;
+    scopeLeft.fill (0.0f);
+    scopeRight.fill (0.0f);
+    surroundView.reset();
+    surroundView.setSelectedChannel (selectedSurroundChannel);
+    surroundView.setLocked (! isFull());
+    resized();
+    repaint();
+}
+
 void LudensScopeEditor::applyEdition()
 {
     const bool full = isFull();
     const bool legacy = LudensScopeLicence::isLegacy();
 
     donateButton.setVisible (! full);
+    surroundView.setLocked (! full);
+    surroundView.setSelectedChannel (selectedSurroundChannel);
 
     // Lite has no reference workflow, so it does not reserve a bottom strip
     // for the player or the ORIG/REF source switch. PRO keeps both unchanged.
@@ -2220,8 +2315,8 @@ void LudensScopeEditor::applyEdition()
     unlockButton.setButtonText (full ? "PRO" : "UNLOCK");
     unlockButton.setEnabled (! full);
     unlockButton.setTooltip (full
-        ? (legacy ? "Grandfathered PRO licence (0.4.x)" : "LudensScope PRO licence")
-        : "Unlock LudensScope PRO - EUR 19 (was EUR 29) via PayPal");
+        ? (legacy ? "Grandfathered PRO licence (0.4.x)" : "LudensScope Surround PRO licence")
+        : "Unlock LudensScope Surround PRO - EUR 19 (was EUR 29) via PayPal");
 
     if (! full)
     {
@@ -2656,6 +2751,7 @@ void LudensScopeEditor::resetDisplay()
                           correlation, truePeakHoldDb, -1.0f, -100.0f, 0, 0);
     vectorScopeView.setData (scopeLeft.data() + (scopeSize - 1024),
                              scopeRight.data() + (scopeSize - 1024), 1024);
+    surroundView.reset();
     oscilloscopeView.setData (scopeLeft.data(), scopeRight.data(), scopeSize, frozen);
 
     spectrumView.repaint();

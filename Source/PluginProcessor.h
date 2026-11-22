@@ -25,7 +25,7 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "LudensScope"; }
+    const juce::String getName() const override { return "LudensScope Surround"; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -49,7 +49,11 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     // UI side: drain samples captured by the audio thread.
+    // readSamples() keeps the stereo path used by the legacy views and tests.
+    // readSamplesSurround() returns the six discrete decoded channels in
+    // SMPTE/ITU order: L, R, C, LFE, Ls, Rs.
     int readSamples (float* left, float* right, int maxFrames) noexcept;
+    int readSamplesSurround (float* const* channels, int maxFrames) noexcept;
 
     void requestReset() noexcept { resetRequested.store (true, std::memory_order_relaxed); }
     void requestIntegratedReset() noexcept { integratedResetRequested.store (true, std::memory_order_relaxed); }
@@ -163,6 +167,7 @@ public:
     bool isBandSolo() const noexcept { return bandSoloActive.load(); }
 
     bool supportsMonoBuses() const;
+    bool supports5point1Buses() const;
     juce::int64 referenceAudioBytes() const;
     juce::int64 referenceSlotBytes (int slot) const;
 
@@ -220,6 +225,10 @@ public:
         int vuInputSmoothing = 80;
         int showMatch = 0;
         int uiScalePercent = 0;
+
+        // 0 = fixed ITU downmix, 1..6 = L, R, C, LFE, Ls, Rs for the FFT,
+        // waterfall and oscilloscope. Stored with the project, not in OPTIONS.
+        int surroundChannel = 0;
     };
 
     ViewSettings getViewSettings() const noexcept { return viewSettingsValue; }
@@ -269,10 +278,14 @@ private:
 
     LoudnessMeter loudness;
 
-    static constexpr int fifoSize = 1 << 17;
+    static constexpr int maxAnalysisChannels = 6;
+    // 32768 frames (0.68 s at 48 kHz) is comfortably above the UI's 16384-frame
+    // read chunk while keeping six channels small enough for stack-hosted
+    // processor instances in the test harness.
+    static constexpr int fifoSize = 1 << 15;
     juce::AbstractFifo fifo { fifoSize };
-    std::array<float, fifoSize> fifoLeft {};
-    std::array<float, fifoSize> fifoRight {};
+    std::array<std::array<float, fifoSize>, maxAnalysisChannels> fifoChannels {};
+    std::atomic<int> fifoChannelCount { 2 };
 
     std::atomic<bool> resetRequested { false };
     std::atomic<bool> integratedResetRequested { false };

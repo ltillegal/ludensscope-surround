@@ -3,17 +3,33 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
+
+#include "dsp/Downmix.h"
 
 namespace
 {
     constexpr int snapshotMagic = 0x4c444e53; // 'LDNS'
-    constexpr int snapshotVersion = 17;
+    constexpr int snapshotVersion = 18;
+}
+
+namespace
+{
+    // The standalone build opens the analyser's monitor sink directly, so it
+    // has to ask the device for all six decoded channels. Inside a DAW the
+    // default stays stereo; a 5.1 bus layout can still be selected there.
+    juce::AudioChannelSet defaultChannelSet()
+    {
+        return juce::JUCEApplicationBase::isStandaloneApp()
+                   ? juce::AudioChannelSet::create5point1()
+                   : juce::AudioChannelSet::stereo();
+    }
 }
 
 LudensScopeProcessor::LudensScopeProcessor()
     : juce::AudioProcessor (BusesProperties()
-                                .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                                .withOutput ("Output", juce::AudioChannelSet::stereo(), true))
+                                .withInput  ("Input",  defaultChannelSet(), true)
+                                .withOutput ("Output", defaultChannelSet(), true))
 {
     undoIntegrated = std::make_unique<float[]> (LoudnessMeter::integratedBlockCapacity);
     undoHistogram = std::make_unique<std::uint32_t[]> (LoudnessMeter::lraHistogramBins);
@@ -48,13 +64,22 @@ bool LudensScopeProcessor::supportsMonoBuses() const
     return isBusesLayoutSupported (layout);
 }
 
+bool LudensScopeProcessor::supports5point1Buses() const
+{
+    BusesLayout layout;
+    layout.inputBuses.add (juce::AudioChannelSet::create5point1());
+    layout.outputBuses.add (juce::AudioChannelSet::create5point1());
+    return isBusesLayoutSupported (layout);
+}
+
 bool LudensScopeProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
     const auto input = layouts.getMainInputChannelSet();
     const auto output = layouts.getMainOutputChannelSet();
 
     const bool valid = input == juce::AudioChannelSet::mono()
-                    || input == juce::AudioChannelSet::stereo();
+                    || input == juce::AudioChannelSet::stereo()
+                    || input == juce::AudioChannelSet::create5point1();
 
     return valid && output == input;
 }
@@ -63,8 +88,11 @@ void LudensScopeProcessor::prepareToPlay (double sampleRate, int)
 {
     loudness.prepare (sampleRate);
     fifo.reset();
-    fifoLeft.fill (0.0f);
-    fifoRight.fill (0.0f);
+
+    for (auto& channel : fifoChannels)
+        channel.fill (0.0f);
+
+    fifoChannelCount.store (2, std::memory_order_relaxed);
 
     referenceMix = 0.0f;
     referenceCurrentGain = 1.0f;
@@ -435,9 +463,23 @@ void LudensScopeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     if (buffer.getNumChannels() < 1 || numSamples <= 0)
         return;
 
-    const bool stereo = buffer.getNumChannels() > 1;
+    const int inputChannels = buffer.getNumChannels();
+    const bool stereo = inputChannels > 1;
+    const bool surround = inputChannels >= surround::channelCount;
+    const int analysisChannels = surround ? surround::channelCount : (stereo ? 2 : 1);
     const float* left = buffer.getReadPointer (0);
     const float* right = stereo ? buffer.getReadPointer (1) : left;
+
+    // Decoded 5.1 is stored in SMPTE/ITU order: L, R, C, LFE, Ls, Rs.
+    const float* analysis[surround::channelCount] = {
+        left, right,
+        inputChannels > 2 ? buffer.getReadPointer (2) : left,
+        inputChannels > 3 ? buffer.getReadPointer (3) : left,
+        inputChannels > 4 ? buffer.getReadPointer (4) : left,
+        inputChannels > 5 ? buffer.getReadPointer (5) : left
+    };
+
+    fifoChannelCount.store (analysisChannels, std::memory_order_relaxed);
 
     if (undoCaptureRequested.exchange (false, std::memory_order_relaxed))
     {
@@ -589,16 +631,21 @@ void LudensScopeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
 
     std::uint32_t blockClips = 0;
 
-    for (int i = 0; i < numSamples; ++i)
+    for (int channel = 0; channel < analysisChannels; ++channel)
     {
-        if (std::abs (left[i]) >= 1.0f)  ++blockClips;
-        if (stereo && std::abs (right[i]) >= 1.0f) ++blockClips;
+        const float* data = analysis[(size_t) channel];
+
+        for (int i = 0; i < numSamples; ++i)
+            if (std::abs (data[i]) >= 1.0f)
+                ++blockClips;
     }
 
     if (blockClips > 0)
         clippedSamples.fetch_add (blockClips, std::memory_order_relaxed);
 
-    if (stereo)
+    if (surround)
+        loudness.processSurround (analysis, numSamples);
+    else if (stereo)
         loudness.process (left, right, numSamples);
     else
         loudness.processMono (left, numSamples);
@@ -606,16 +653,17 @@ void LudensScopeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
     int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
     fifo.prepareToWrite (numSamples, start1, size1, start2, size2);
 
-    if (size1 > 0)
+    for (int channel = 0; channel < analysisChannels; ++channel)
     {
-        std::memcpy (fifoLeft.data()  + start1, left,  sizeof (float) * (size_t) size1);
-        std::memcpy (fifoRight.data() + start1, right, sizeof (float) * (size_t) size1);
-    }
+        const float* data = analysis[(size_t) channel];
 
-    if (size2 > 0)
-    {
-        std::memcpy (fifoLeft.data()  + start2, left  + size1, sizeof (float) * (size_t) size2);
-        std::memcpy (fifoRight.data() + start2, right + size1, sizeof (float) * (size_t) size2);
+        if (size1 > 0)
+            std::memcpy (fifoChannels[(size_t) channel].data() + start1, data,
+                         sizeof (float) * (size_t) size1);
+
+        if (size2 > 0)
+            std::memcpy (fifoChannels[(size_t) channel].data() + start2, data + size1,
+                         sizeof (float) * (size_t) size2);
     }
 
     fifo.finishedWrite (size1 + size2);
@@ -678,7 +726,7 @@ void LudensScopeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
 
 int LudensScopeProcessor::readSamples (float* left, float* right, int maxFrames) noexcept
 {
-    if (maxFrames <= 0)
+    if (maxFrames <= 0 || left == nullptr || right == nullptr)
         return 0;
 
     int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
@@ -689,20 +737,99 @@ int LudensScopeProcessor::readSamples (float* left, float* right, int maxFrames)
     if (total <= 0)
         return 0;
 
+    const int stored = fifoChannelCount.load (std::memory_order_relaxed);
+
+    // Legacy callers always want a stereo pair. In 5.1 that pair is the fixed
+    // ITU downmix; the LFE is not part of it.
+    if (stored >= surround::channelCount)
+    {
+        std::array<std::vector<float>, surround::channelCount> raw;
+
+        for (auto& channel : raw)
+            channel.resize ((size_t) total);
+
+        for (int channel = 0; channel < surround::channelCount; ++channel)
+        {
+            if (size1 > 0)
+                std::memcpy (raw[(size_t) channel].data(),
+                             fifoChannels[(size_t) channel].data() + start1,
+                             sizeof (float) * (size_t) size1);
+
+            if (size2 > 0)
+                std::memcpy (raw[(size_t) channel].data() + size1,
+                             fifoChannels[(size_t) channel].data() + start2,
+                             sizeof (float) * (size_t) size2);
+        }
+
+        fifo.finishedRead (total);
+
+        float* inputs[surround::channelCount];
+
+        for (int channel = 0; channel < surround::channelCount; ++channel)
+            inputs[(size_t) channel] = raw[(size_t) channel].data();
+
+        surround::downmixToStereo (inputs, left, right, total);
+        return total;
+    }
+
     if (size1 > 0)
     {
-        std::memcpy (left,  fifoLeft.data()  + start1, sizeof (float) * (size_t) size1);
-        std::memcpy (right, fifoRight.data() + start1, sizeof (float) * (size_t) size1);
+        std::memcpy (left, fifoChannels[0].data() + start1, sizeof (float) * (size_t) size1);
+        std::memcpy (right, (stored > 1 ? fifoChannels[1] : fifoChannels[0]).data() + start1,
+                     sizeof (float) * (size_t) size1);
     }
 
     if (size2 > 0)
     {
-        std::memcpy (left  + size1, fifoLeft.data()  + start2, sizeof (float) * (size_t) size2);
-        std::memcpy (right + size1, fifoRight.data() + start2, sizeof (float) * (size_t) size2);
+        std::memcpy (left + size1, fifoChannels[0].data() + start2,
+                     sizeof (float) * (size_t) size2);
+        std::memcpy (right + size1,
+                     (stored > 1 ? fifoChannels[1] : fifoChannels[0]).data() + start2,
+                     sizeof (float) * (size_t) size2);
     }
 
     fifo.finishedRead (total);
+    return total;
+}
 
+int LudensScopeProcessor::readSamplesSurround (float* const* channels, int maxFrames) noexcept
+{
+    if (maxFrames <= 0 || channels == nullptr)
+        return 0;
+
+    int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
+    fifo.prepareToRead (maxFrames, start1, size1, start2, size2);
+
+    const int total = size1 + size2;
+
+    if (total <= 0)
+        return 0;
+
+    const int stored = fifoChannelCount.load (std::memory_order_relaxed);
+
+    for (int channel = 0; channel < surround::channelCount; ++channel)
+    {
+        auto* destination = channels[(size_t) channel];
+
+        if (destination == nullptr)
+            continue;
+
+        if (channel >= stored)
+        {
+            std::fill (destination, destination + total, 0.0f);
+            continue;
+        }
+
+        if (size1 > 0)
+            std::memcpy (destination, fifoChannels[(size_t) channel].data() + start1,
+                         sizeof (float) * (size_t) size1);
+
+        if (size2 > 0)
+            std::memcpy (destination + size1, fifoChannels[(size_t) channel].data() + start2,
+                         sizeof (float) * (size_t) size2);
+    }
+
+    fifo.finishedRead (total);
     return total;
 }
 
@@ -815,6 +942,7 @@ void LudensScopeProcessor::getStateInformation (juce::MemoryBlock& destData)
     stream.writeInt (viewSettingsValue.showMatch);
     stream.writeInt (viewSettingsValue.uiScalePercent);
     stream.writeInt (viewSettingsValue.vuInputSmoothing);
+    stream.writeInt (viewSettingsValue.surroundChannel);
 
     syncActiveReferenceSlot();
 
@@ -849,7 +977,7 @@ void LudensScopeProcessor::setStateInformation (const void* data, int sizeInByte
     const int selected = stream.readInt();
 
     if (magic != snapshotMagic
-        || (version < 1 || version > 17)
+        || (version < 1 || version > 18)
         || slots != snapshotSlots || bins != snapshotBins)
         return;
 
@@ -949,6 +1077,9 @@ void LudensScopeProcessor::setStateInformation (const void* data, int sizeInByte
             const int smoothing = stream.readInt();
             view.vuInputSmoothing = (smoothing == 40 || smoothing == 150) ? smoothing : 80;
         }
+
+        if (version >= 18)
+            view.surroundChannel = juce::jlimit (0, surround::channelCount, stream.readInt());
 
         if (view.waterfallHistory != 1 && view.waterfallHistory != 2
             && view.waterfallHistory != 4)

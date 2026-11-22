@@ -1,15 +1,16 @@
-# LudensScope
+# LudensScope Surround
 
-[![build](https://github.com/ltillegal/ludensscope/actions/workflows/build.yml/badge.svg)](https://github.com/ltillegal/ludensscope/actions/workflows/build.yml)
+[![build](https://github.com/ltillegal/ludensscope-surround/actions/workflows/build.yml/badge.svg)](https://github.com/ltillegal/ludensscope-surround/actions/workflows/build.yml)
 
 **Русский** · [English](README.md) · [❤ Donate](https://www.paypal.com/donate/?business=0eskimo0%40gmail.com&item_name=LudensScope&currency_code=USD)
 
-Минималистичный стерео-анализатор в форматах **VST3, AU, AAX, CLAP** и standalone: спектр, громкость
-по ITU-R BS.1770-4, true-peak, векторскоп, осциллограф и референс.
+Минималистичный анализатор стерео и декодированного 5.1 в форматах **VST3, AU, AAX, CLAP**
+и standalone: спектр, громкость по ITU-R BS.1770-4, true-peak, векторскоп,
+осциллограф, room-view 5.1 и референс.
 
 Бесплатный Lite — не пробник по времени. Праздничная цена: PRO — разовая
-покупка за 19 € (было 29 €): референс, снапшоты, gain staging, все 7 тем и
-продвинутые настройки FFT/дисплея.
+покупка за 19 € (было 29 €): референс, снапшоты, gain staging, room-view 5.1,
+все 7 тем и продвинутые настройки FFT/дисплея.
 Без подписок и телеметрии. В состоянии проекта сохраняются снапшоты FFT,
 настройки анализатора, вид интерфейса и метаданные референса. Пользовательских
 пресетов плагина нет — только именованные target-кривые.
@@ -22,6 +23,7 @@
 |---|:---:|:---:|
 | Спектр, waterfall, LUFS/TP/LRA | да | да |
 | VU, осциллограф, векторскоп | да | да |
+| Room-view 5.1 + FFT по каналу | — | да |
 | Guides и band solo | да | да |
 | FFT size/window, speed, span, mono | да | да |
 | PNG, проверка обновлений | да | да |
@@ -37,7 +39,7 @@
 Нажмите **UNLOCK** в шапке (или `FFT → Unlock PRO`) и вставьте ключ.
 Праздничная цена: PRO — разовая покупка через PayPal за 19 € (было 29 €).
 После оплаты напишите на alek.ludens@gmail.com, придёт ключ. Лицензия офлайн,
-хранится в каталоге конфигурации LudensScope, обновления 1.x включены.
+хранится в каталоге конфигурации `LudensScopeSurround`, обновления 2.x включены.
 Без аккаунта и телеметрии. Ключи, выданные с версии 1.0.4, активируются не более
 чем на 2 машинах; более старые ключи остаются без ограничений.
 
@@ -79,7 +81,7 @@ cmake --build build -j$(nproc)
 ```
 
 JUCE (8.0.15) подтягивается автоматически через `FetchContent`. Готовый VST3
-копируется в `~/.vst3/LudensScope.vst3`.
+копируется в `~/.vst3/LudensScope Surround.vst3`.
 
 Проверка калибровки (опционально):
 
@@ -88,13 +90,13 @@ cmake --preset dev
 cmake --build --preset dev -j$(nproc)
 
 # LUFS (BS.1770-4) + true-peak + LRA: 13 проверок
-./build/LudensScopeLoudnessCalibration
+./build/LudensScopeSurroundLoudnessCalibration
 
 # калибровка спектра: синус -6 dBFS должен читаться около -6 dBFS
-./build/LudensScopeCalibration_artefacts/Release/LudensScopeCalibration
+./build/LudensScopeSurroundCalibration_artefacts/Release/LudensScopeSurroundCalibration
 
 # рендер UI в PNG без DAW (проверка, что редактор не падает)
-./build/LudensScopeUiSnapshot_artefacts/Release/LudensScopeUiSnapshot
+./build/LudensScopeSurroundUiSnapshot_artefacts/Release/LudensScopeSurroundUiSnapshot
 # -> docs/ui-preview.png (или путь из первого аргумента)
 ```
 
@@ -106,7 +108,7 @@ cmake --build --preset dev -j$(nproc)
    (20 Гц – 20 кГц). Кнопка `SPAN` переключает 10/8/6/4/2/1 октавы, водопад
    следует за выбранным диапазоном. Наведи курсор — под ним частота, нота,
    уровень, peak и добротность Q ближайшего пика (по ширине на −3 дБ). Ниже —
-   водопад (история ~3/7/14 секунд), его останавливает `FREEZE`. Высоту
+   водопад (история ~3/7/14 секунд); `FREEZE` стопорит только спектр и водопад. Высоту
    водопада можно менять, перетаскивая разделитель; двойной клик возвращает
    норму. Вверху спектра — HUD-пилюли с балансом LOW/MID/HIGH в процентах
    энергии. `GUIDES` открывает меню — Off или жанровый набор зон (General /
@@ -125,7 +127,7 @@ cmake --build --preset dev -j$(nproc)
    (следующий снапшот, REF FILE или живая), кривая сайд-канала M/S и экспорт
    вида в PNG. Пресеты кривых: `Save current curve` сохраняет усреднённый
    спектр как именованную target-кривую (глобально, в
-   `~/.config/LudensScope/curve-presets.json`), `Load curve` рисует её янтарным
+   `~/.config/LudensScopeSurround/curve-presets.json`), `Load curve` рисует её янтарным
    пунктиром с подписью TARGET, `Delete curve` удаляет. Выбранная target-кривая
    сохраняется в проекте.
 3. LOUDNESS: momentary (400 мс), short-term (3 с), integrated (с гейтингом
@@ -157,7 +159,15 @@ cmake --build --preset dev -j$(nproc)
    проекте; при открытии файл подгружается заново, а если не найден — остаётся
    кривая для сравнения. Файлы длиннее 10 минут обрезаются.
 
-   `FREEZE` — стопор кадров, `RESET` — сброс пиков, громкости, выбранного
+   В режиме 5.1 векторскоп заменяется room-view шести декодированных
+   каналов (L, R, C, LFE, Ls, Rs) с уровнями и peak-hold. В PRO можно выбрать
+   `ALL` или один канал для FFT, водопада и осциллографа; VU, громкость и
+   true-peak всегда работают на фиксированном ITU-downmix (без LFE).
+   Каналы должны быть уже декодированы — плагин не декодирует AC-3 сам:
+   подавайте шесть дискретных каналов от внешнего ffmpeg-моста.
+
+   `FREEZE` стопорит только спектр и водопад; скопы и метры продолжают
+   обновляться. `RESET` — сброс пиков, громкости, выбранного
    снапшота, референса и счётчиков; `UNDO` возвращает состояние до последнего
    сброса (интегрированную громкость, LRA, снапшот, референс и счётчики).
    Маленькая `RESET` слева от `TGT` сбрасывает только Integrated LUFS/LRA.
@@ -177,7 +187,7 @@ cmake --build --preset dev -j$(nproc)
 
 Кнопка `THEME` в правом верхнем углу переключает семь тем интерфейса:
 **Blue** (текущая), **Dark**, **Light**, **Magenta**, **Green**, **Red**,
-**Orange**. Выбор глобальный: сохраняется в настройках LudensScope и применяется
+**Orange**. Выбор глобальный: сохраняется в настройках LudensScope Surround и применяется
 ко всем открытым инстансам; в светлой теме логотип и кривые
 автоматически перекрашиваются, водопад следует палитре. Кнопки правой
 колонки, `THEME`, ORIG/REF и транспорт масштабируются вместе с окном
@@ -212,13 +222,13 @@ overshoot. Входное сглаживание — 40/80/150 мс (`OPTIONS �
 
 ## Установка из релиза
 
-- Linux: `sudo apt install ./LudensScope-linux.deb` — VST3 в `/usr/lib/vst3`,
-  CLAP в `/usr/lib/clap`, standalone в меню приложений (`ludensscope`).
-- macOS: `LudensScope-macos.pkg` — VST3/AU/CLAP в `/Library/Audio/Plug-Ins`,
+- Linux: `sudo apt install ./LudensScopeSurround-linux.deb` — VST3 в `/usr/lib/vst3`,
+  CLAP в `/usr/lib/clap`, standalone в меню приложений (`ludensscope-surround`).
+- macOS: `LudensScopeSurround-macos.pkg` — VST3/AU/CLAP в `/Library/Audio/Plug-Ins`,
   AAX в `/Library/Application Support/Avid/Audio/Plug-Ins`, приложение в `/Applications`.
-- Windows: `LudensScope-windows.exe` — VST3 в `Common Files\VST3`, CLAP в
+- Windows: `LudensScopeSurround-windows.exe` — VST3 в `Common Files\VST3`, CLAP в
   `Common Files\CLAP`, AAX в `Common Files\Avid\Audio\Plug-Ins`, standalone в
-  `Program Files\LudensScope`.
+  `Program Files\LudensScope Surround`.
 - [Komi Store](https://komistore.app/) подхватывает релиз по installable assets
   (`.deb` / `.pkg` / `.exe`) автоматически.
 
@@ -266,9 +276,9 @@ cmake --build --preset macos-universal -j$(sysctl -n hw.ncpu)
 
 # локальная ad-hoc подпись (обязательна для arm64)
 codesign --force --deep --sign - \
-  build/LudensScope_artefacts/Release/VST3/LudensScope.vst3
+  build/LudensScopeSurround_artefacts/Release/VST3/LudensScope Surround.vst3
 codesign --force --deep --sign - \
-  build/LudensScope_artefacts/Release/AU/LudensScope.component
+  build/LudensScopeSurround_artefacts/Release/AU/LudensScope Surround.component
 ```
 
 `COPY_PLUGIN_AFTER_BUILD` кладёт VST3 в `~/Library/Audio/Plug-Ins/VST3/`,
@@ -277,7 +287,7 @@ codesign --force --deep --sign - \
 
 В Cubase: `Studio → VST Plug-in Manager → Rescan`, либо просто перезапустить
 Cubase. Плагин появится в категории `Analyzer`. Для Logic/GarageBand перезапусти
-приложение; проверить AU можно командой `auval -v aufx LDSC LDNS`.
+приложение; проверить AU можно командой `auval -v aufx LDSR LDSR`.
 
 Замечания:
 
@@ -290,7 +300,7 @@ Cubase. Плагин появится в категории `Analyzer`. Для L
 
 ## Ограничения
 
-- Только стерео (2 in / 2 out), форматы VST3 и AUv2.
+- Моно, стерео и декодированный 5.1 (6 in / 6 out), форматы VST3 и AUv2.
 - Пользовательских пресетов плагина нет; target-кривые — глобальные пресеты.
 - AAX и AUv3 не собираются.
 - Обновления проверяются только через опубликованный GitHub Release;
@@ -300,7 +310,7 @@ Cubase. Плагин появится в категории `Analyzer`. Для L
 
 Праздничная цена: PRO — разовая покупка за 19 € (было 29 €) через PayPal.
 После оплаты напишите на alek.ludens@gmail.com с чеком, придёт ключ.
-Лицензия офлайн, обновления 1.x включены. Ключи с версии 1.0.4 активируются
+Лицензия офлайн, обновления 2.x включены. Ключи с версии 1.0.4 активируются
 не более чем на 2 машинах; старые ключи остаются без ограничений.
 
 [Купить PRO — 19 € (было 29 €)](https://www.paypal.com/ncp/payment/9LQYYZMR7TW7G)
@@ -310,7 +320,7 @@ Cubase. Плагин появится в категории `Analyzer`. Для L
 
 ## Поддержать проект
 
-Если LudensScope экономит время — можно поддержать разработку через PayPal:
+Если LudensScope Surround экономит время — можно поддержать разработку через PayPal:
 
 [![Donate](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white)](https://www.paypal.com/donate/?business=0eskimo0%40gmail.com&item_name=LudensScope&currency_code=USD)
 

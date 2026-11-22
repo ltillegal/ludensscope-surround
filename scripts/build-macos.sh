@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build, sign and install LudensScope on macOS as a universal VST3 + AU.
+# Build, sign and install LudensScope Surround on macOS as a universal VST3 + AU.
 #
 set -euo pipefail
 
@@ -9,8 +9,8 @@ cd "$(dirname "$0")/.."
 cmake --preset macos-universal
 cmake --build --preset macos-universal -j "$(sysctl -n hw.ncpu)"
 
-VST3_PLUGIN="build/LudensScope_artefacts/Release/VST3/LudensScope.vst3"
-AU_PLUGIN="build/LudensScope_artefacts/Release/AU/LudensScope.component"
+VST3_PLUGIN="build/LudensScopeSurround_artefacts/Release/VST3/LudensScope Surround.vst3"
+AU_PLUGIN="build/LudensScopeSurround_artefacts/Release/AU/LudensScope Surround.component"
 
 # Ad-hoc signature is required for arm64. For distribution, replace "-" with a
 # Developer ID identity and notarise both bundles.
@@ -27,12 +27,12 @@ VST3_DEST="$HOME/Library/Audio/Plug-Ins/VST3"
 AU_DEST="$HOME/Library/Audio/Plug-Ins/Components"
 
 mkdir -p "$VST3_DEST" "$AU_DEST"
-rm -rf "$VST3_DEST/LudensScope.vst3" "$AU_DEST/LudensScope.component"
+rm -rf "$VST3_DEST/LudensScope Surround.vst3" "$AU_DEST/LudensScope Surround.component"
 cp -R "$VST3_PLUGIN" "$VST3_DEST/"
 cp -R "$AU_PLUGIN" "$AU_DEST/"
 
 echo "Installed:"
-echo "  $VST3_DEST/LudensScope.vst3"
-echo "  $AU_DEST/LudensScope.component"
+echo "  $VST3_DEST/LudensScope Surround.vst3"
+echo "  $AU_DEST/LudensScope Surround.component"
 echo "Cubase: Studio -> VST Plug-in Manager -> Rescan."
-echo "AU check: auval -v aufx LDSC LDNS"
+echo "AU check: auval -v aufx LDSR LDSR"

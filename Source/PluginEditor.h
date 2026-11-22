@@ -21,6 +21,7 @@
 #include "Licence.h"
 #include "ui/VuMeterView.h"
 #include "ui/ReferenceStrip.h"
+#include "ui/SurroundView.h"
 #include "ui/VectorScopeView.h"
 
 class ScopeLookAndFeel;
@@ -140,6 +141,7 @@ private:
     void applyTargetCurve (const juce::String& name);
     void clearTargetCurve();
     void undoReset();
+    void refreshBusLayout();
 
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void fileDragEnter (const juce::StringArray& files, int x, int y) override;
@@ -161,6 +163,7 @@ private:
     MeterPanel meterPanel;
     VuMeterView vuMeterView;
     VectorScopeView vectorScopeView;
+    SurroundView surroundView;
     OscilloscopeView oscilloscopeView;
 
     juce::TextButton freezeButton { "FREEZE" };
@@ -279,7 +282,11 @@ private:
     TruePeakDetector truePeakLeft, truePeakRight;
 
     std::vector<float> readLeft, readRight;
+    std::array<std::vector<float>, surround::channelCount> readSurround;
     std::array<float, scopeSize> scopeLeft {}, scopeRight {};
+
+    bool surroundActive = false;
+    int selectedSurroundChannel = 0; // 0 = ALL, 1..6 = L, R, C, LFE, Ls, Rs
 
     double preparedSampleRate = 0.0;
     bool frozen = false;
