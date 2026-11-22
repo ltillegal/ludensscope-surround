@@ -53,6 +53,21 @@ public:
             auto& meter = meters[(size_t) c];
             meter.rmsDb = gainToDb ((float) std::sqrt (sum / (double) numSamples));
             meter.peakDb = gainToDb (peak);
+
+            // The room view is read at a glance, so let its numbers and bubble
+            // sizes settle instead of jumping on every 30 Hz editor tick.
+            // The raw peakDb still feeds getPeakDb() and the peak-hold ring.
+            constexpr float displaySmoothing = 0.08f;
+
+            meter.shownRmsDb = meter.shownRmsDb <= -99.0f
+                                   ? meter.rmsDb
+                                   : meter.shownRmsDb
+                                         + displaySmoothing * (meter.rmsDb - meter.shownRmsDb);
+            meter.shownPeakDb = meter.shownPeakDb <= -99.0f
+                                    ? meter.peakDb
+                                    : meter.shownPeakDb
+                                          + displaySmoothing * (meter.peakDb - meter.shownPeakDb);
+
             meter.holdDb = std::max (meter.peakDb, meter.holdDb - 0.6f);
         }
 
@@ -155,6 +170,8 @@ private:
         float rmsDb = -100.0f;
         float peakDb = -100.0f;
         float holdDb = -100.0f;
+        float shownRmsDb = -100.0f;
+        float shownPeakDb = -100.0f;
     };
 
     static float gainToDb (float gain) noexcept
@@ -251,7 +268,7 @@ private:
         for (int c = 0; c < surround::channelCount; ++c)
         {
             const auto& meter = meters[(size_t) c];
-            const float level = juce::jlimit (0.0f, 1.0f, (meter.rmsDb + 60.0f) / 60.0f);
+            const float level = juce::jlimit (0.0f, 1.0f, (meter.shownRmsDb + 60.0f) / 60.0f);
             const float baseSize = c == surround::lfe ? 3.0f : 4.5f;
             const float size = baseSize + level * (c == surround::lfe ? 2.0f : 4.5f) * uiScale;
             const auto point = positions[(size_t) c];
@@ -284,8 +301,8 @@ private:
             const auto dbLabel = juce::Rectangle<float> (point.x - 15.0f, point.y + 7.0f, 30.0f, 9.0f);
             g.setFont (theme::detailFont (6.5f, uiScale));
             g.setColour (locked ? theme::textDim : theme::text.withAlpha (0.75f));
-            g.drawText (meter.peakDb <= -59.0f ? juce::String ("-inf")
-                                               : juce::String (meter.peakDb, 0),
+            g.drawText (meter.shownPeakDb <= -59.0f ? juce::String ("-inf")
+                                                   : juce::String (meter.shownPeakDb, 0),
                         dbLabel, juce::Justification::centred);
         }
     }
