@@ -10,9 +10,9 @@
 #include "Theme.h"
 #include "../dsp/Downmix.h"
 
-// Room-view of the six discrete decoded 5.1 channels. The selector row picks
-// which channel feeds the FFT, waterfall and oscilloscope; the channel meters
-// and peak-hold markers always show all six channels.
+// Nuendo-style bargraph view of the six discrete decoded 5.1 channels. The
+// selector row (or clicking a strip) picks which channel feeds the FFT,
+// waterfall and oscilloscope; all six RMS/peak meters stay live.
 class SurroundView : public juce::Component,
                      public juce::SettableTooltipClient
 {
@@ -23,7 +23,8 @@ public:
     {
         setOpaque (true);
         setBufferedToImage (true);
-        setTooltip ("5.1 room view. Click a channel to route the FFT, waterfall and scope.");
+        setTooltip ("5.1 channel meters. Click a strip to route the FFT, waterfall and scope. "
+                    "LFE uses a +10 dB display trim.");
     }
 
     std::function<void (int)> onChannelSelect;
@@ -68,7 +69,26 @@ public:
                                     : meter.shownPeakDb
                                           + displaySmoothing * (meter.peakDb - meter.shownPeakDb);
 
-            meter.holdDb = std::max (meter.peakDb, meter.holdDb - 0.6f);
+            // Nuendo-style peak hold: keep the marker still for ~1.5 s, then
+            // let it fall at 18 dB/s. Clip LEDs latch for ~2 s.
+            static constexpr int ticksPerSecond = 30;
+            static constexpr int holdTicks = 3 * ticksPerSecond / 2;
+            static constexpr int clipTicks = 2 * ticksPerSecond;
+
+            if (meter.peakDb >= meter.holdDb - 0.1f)
+            {
+                meter.holdDb = meter.peakDb;
+                meter.holdCountdown = holdTicks;
+            }
+            else if (meter.holdCountdown > 0)
+                --meter.holdCountdown;
+            else
+                meter.holdDb = juce::jmax (meter.rmsDb, meter.holdDb - 0.6f);
+
+            if (meter.peakDb >= -0.2f)
+                meter.clipCountdown = clipTicks;
+            else if (meter.clipCountdown > 0)
+                --meter.clipCountdown;
         }
 
         repaint();
@@ -145,20 +165,27 @@ public:
                              .reduced (juce::roundToInt (8.0f * uiScale), 0);
 
         drawSelector (g, selector);
-        drawRoom (g, area);
+        drawMeters (g, area);
     }
 
     void mouseDown (const juce::MouseEvent& e) override
     {
-        if (selectorBounds[0].isEmpty())
-            return;
-
         for (int i = 0; i < totalChannels; ++i)
         {
             if (selectorBounds[(size_t) i].contains (e.getPosition()))
             {
                 if (onChannelSelect != nullptr)
                     onChannelSelect (i);
+                return;
+            }
+        }
+
+        for (int c = 0; c < surround::channelCount; ++c)
+        {
+            if (meterBounds[(size_t) c].contains (e.getPosition().toFloat()))
+            {
+                if (onChannelSelect != nullptr)
+                    onChannelSelect (c + 1);
                 return;
             }
         }
@@ -172,6 +199,8 @@ private:
         float holdDb = -100.0f;
         float shownRmsDb = -100.0f;
         float shownPeakDb = -100.0f;
+        int holdCountdown = 0;
+        int clipCountdown = 0;
     };
 
     static float gainToDb (float gain) noexcept
@@ -231,84 +260,135 @@ private:
         }
     }
 
-    void drawRoom (juce::Graphics& g, juce::Rectangle<float> area)
+    void drawMeters (juce::Graphics& g, juce::Rectangle<float> area)
     {
-        if (area.getWidth() <= 8.0f || area.getHeight() <= 8.0f)
+        if (area.getWidth() <= 12.0f || area.getHeight() <= 12.0f)
             return;
 
-        const auto room = area.reduced (2.0f);
+        const auto box = area.reduced (2.0f);
 
         g.setColour (theme::panel.withAlpha (0.55f));
-        g.fillRoundedRectangle (room, 6.0f);
+        g.fillRoundedRectangle (box, 6.0f);
         g.setColour (theme::grid);
-        g.drawRoundedRectangle (room, 6.0f, 1.0f);
+        g.drawRoundedRectangle (box, 6.0f, 1.0f);
 
-        const auto centre = juce::Point<float> (room.getCentreX(), room.getY() + room.getHeight() * 0.56f);
-        const float radius = juce::jmin (room.getWidth() * 0.42f, room.getHeight() * 0.42f);
+        meterBounds = {};
 
-        g.setColour (theme::gridStrong.withAlpha (0.55f));
-        g.drawLine (centre.x - radius, centre.y, centre.x + radius, centre.y, 1.0f);
-        g.drawLine (centre.x, centre.y - radius * 0.7f, centre.x, centre.y + radius * 0.7f, 1.0f);
+        const float scaleW = juce::jmax (13.0f, 16.0f * uiScale);
+        const float bottomH = juce::jmax (16.0f, 18.0f * uiScale);
+        const float clipH = juce::jmax (5.0f, 6.0f * uiScale);
+        const float pad = 3.0f;
 
-        g.setColour (theme::textDim);
-        g.fillEllipse (centre.x - 2.0f, centre.y - 2.0f, 4.0f, 4.0f);
+        const float trackX = box.getX() + scaleW + pad;
+        const float trackY = box.getY() + clipH + pad;
+        const float trackW = juce::jmax (1.0f, box.getRight() - pad - trackX);
+        const float trackH = juce::jmax (8.0f, box.getBottom() - bottomH - pad - trackY);
 
-        // L, R, C, Ls, Rs placed as seen from the listening position; LFE sits
-        // near the front centre and is drawn smaller because it is not measured
-        // by the BS.1770 meter.
-        const juce::Point<float> positions[surround::channelCount] = {
-            { room.getX() + room.getWidth() * 0.18f, room.getY() + room.getHeight() * 0.32f },
-            { room.getX() + room.getWidth() * 0.82f, room.getY() + room.getHeight() * 0.32f },
-            { room.getX() + room.getWidth() * 0.50f, room.getY() + room.getHeight() * 0.18f },
-            { room.getX() + room.getWidth() * 0.50f, room.getY() + room.getHeight() * 0.72f },
-            { room.getX() + room.getWidth() * 0.17f, room.getY() + room.getHeight() * 0.82f },
-            { room.getX() + room.getWidth() * 0.83f, room.getY() + room.getHeight() * 0.82f }
-        };
+        // Shared dB ruler. LFE is trimmed +10 dB for display only (marked in
+        // the tooltip): a correctly calibrated LFE then reads like the other
+        // channels, while its numeric label and clip LED stay in real dBFS.
+        const float ticks[] = { 0.0f, -12.0f, -24.0f, -48.0f };
+
+        for (float db : ticks)
+        {
+            const float y = yForDb (db, trackY, trackH);
+
+            g.setColour (theme::gridStrong.withAlpha (0.7f));
+            g.drawLine (box.getX() + 2.0f, y, trackX - 2.0f, y, 1.0f);
+
+            g.setFont (theme::detailFont (6.5f, uiScale));
+            g.setColour (theme::textDim);
+            g.drawText (juce::String (db, 0),
+                        juce::Rectangle<float> (box.getX() + 1.0f, y - 5.0f, scaleW - 4.0f, 10.0f),
+                        juce::Justification::centredRight);
+        }
+
+        const float gap = juce::jmax (1.0f, 2.0f * uiScale);
+        const float barW = juce::jmax (2.0f, (trackW - gap * (surround::channelCount - 1))
+                                              / (float) surround::channelCount);
 
         for (int c = 0; c < surround::channelCount; ++c)
         {
             const auto& meter = meters[(size_t) c];
-            const float level = juce::jlimit (0.0f, 1.0f, (meter.shownRmsDb + 60.0f) / 60.0f);
-            const float baseSize = c == surround::lfe ? 3.0f : 4.5f;
-            const float size = baseSize + level * (c == surround::lfe ? 2.0f : 4.5f) * uiScale;
-            const auto point = positions[(size_t) c];
+            const float trim = c == surround::lfe ? 10.0f : 0.0f;
+            const float x = trackX + (float) c * (barW + gap);
             const bool active = selected == c + 1;
-            const auto colour = channelColour (c);
+
+            meterBounds[(size_t) c] = juce::Rectangle<float> (x - gap * 0.5f, box.getY(),
+                                                              barW + gap, box.getHeight());
+
+            // Clip indicator, latched in setData from the untrimmed peak.
+            auto clipRect = juce::Rectangle<float> (x, box.getY() + 1.0f, barW, clipH - 2.0f);
+            g.setColour (meter.clipCountdown > 0 ? theme::hot : theme::panelLine.withAlpha (0.45f));
+            g.fillRoundedRectangle (clipRect, 1.5f);
+
+            // Meter well.
+            g.setColour (theme::bg.withAlpha (0.65f));
+            g.fillRect (x, trackY, barW, trackH);
+
+            const float rmsY = yForDb (meter.shownRmsDb + trim, trackY, trackH);
+            const float fillH = trackY + trackH - rmsY;
+
+            if (fillH > 0.5f)
+            {
+                juce::ColourGradient fill (theme::accent, x, trackY + trackH,
+                                           theme::hot, x, trackY, false);
+                fill.addColour (0.62, theme::accent2);
+
+                g.setGradientFill (fill);
+                g.fillRect (x, rmsY, barW, fillH);
+            }
+
+            // Instantaneous peak cap and the delayed peak-hold marker.
+            const float peakY = yForDb (meter.peakDb + trim, trackY, trackH);
+            g.setColour (theme::text.withAlpha (0.85f));
+            g.fillRect (x, peakY, barW, juce::jmax (1.0f, 1.5f * uiScale));
 
             if (meter.holdDb > -59.0f)
             {
-                const float holdSize = size + 3.0f * uiScale;
-                g.setColour (colour.withAlpha (locked ? 0.20f : 0.45f));
-                g.drawEllipse (point.x - holdSize * 0.5f, point.y - holdSize * 0.5f,
-                               holdSize, holdSize, 1.0f);
+                const float holdY = yForDb (meter.holdDb + trim, trackY, trackH);
+                g.setColour (meter.peakDb >= -1.0f ? theme::hot : theme::accent2);
+                g.fillRect (x, holdY - 0.5f, barW, juce::jmax (1.0f, 1.5f * uiScale));
             }
-
-            g.setColour (locked ? theme::textDim.withAlpha (0.45f) : colour.withAlpha (0.25f + 0.65f * level));
-            g.fillEllipse (point.x - size * 0.5f, point.y - size * 0.5f, size, size);
 
             if (active)
             {
-                g.setColour (theme::text);
-                g.drawEllipse (point.x - size - 2.0f, point.y - size - 2.0f,
-                               size * 2.0f + 4.0f, size * 2.0f + 4.0f, 1.0f);
+                g.setColour (theme::text.withAlpha (0.9f));
+                g.drawRect (x - 0.5f, trackY - 0.5f, barW + 1.0f, trackH + 1.0f, 1.0f);
             }
 
-            const auto label = juce::Rectangle<float> (point.x - 13.0f, point.y - 18.0f, 26.0f, 9.0f);
-            g.setFont (theme::detailFont (7.5f, uiScale));
-            g.setColour (locked ? theme::textDim : colour);
-            g.drawText (channelName (c), label, juce::Justification::centred);
+            const auto labelRect = juce::Rectangle<float> (x - 1.0f, box.getBottom() - bottomH,
+                                                           barW + 2.0f, 10.0f);
+            g.setFont (theme::detailBoldFont (7.5f, uiScale));
+            g.setColour (active ? theme::text : channelColour (c));
+            g.drawFittedText (channelName (c), labelRect.toNearestInt(),
+                              juce::Justification::centred, 1, 0.55f);
 
-            const auto dbLabel = juce::Rectangle<float> (point.x - 15.0f, point.y + 7.0f, 30.0f, 9.0f);
-            g.setFont (theme::detailFont (6.5f, uiScale));
-            g.setColour (locked ? theme::textDim : theme::text.withAlpha (0.75f));
-            g.drawText (meter.shownPeakDb <= -59.0f ? juce::String ("-inf")
-                                                   : juce::String (meter.shownPeakDb, 0),
-                        dbLabel, juce::Justification::centred);
+            const auto valueRect = juce::Rectangle<float> (x - 2.0f, box.getBottom() - bottomH + 9.0f,
+                                                           barW + 4.0f, 9.0f);
+            g.setFont (theme::detailFont (6.0f, uiScale));
+            g.setColour (theme::text.withAlpha (0.75f));
+            g.drawFittedText (meter.shownPeakDb <= -59.0f ? juce::String ("-inf")
+                                                         : juce::String (meter.shownPeakDb, 0),
+                              valueRect.toNearestInt(), juce::Justification::centred, 1, 0.55f);
         }
+
+        if (locked)
+        {
+            g.setColour (theme::bg.withAlpha (0.45f));
+            g.fillRoundedRectangle (box, 6.0f);
+        }
+    }
+
+    static float yForDb (float db, float top, float height) noexcept
+    {
+        const float t = juce::jlimit (0.0f, 1.0f, (6.0f - db) / 66.0f);
+        return top + t * height;
     }
 
     std::array<ChannelMeter, surround::channelCount> meters {};
     std::array<juce::Rectangle<int>, totalChannels> selectorBounds {};
+    std::array<juce::Rectangle<float>, surround::channelCount> meterBounds {};
     int selected = 0;
     bool locked = false;
     float uiScale = 1.0f;

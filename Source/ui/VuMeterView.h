@@ -41,6 +41,21 @@ public:
         velocityL = velocityR = 0.0f;
         powerL = powerR = 0.0f;
         numericL = numericR = -20.0f;
+        peakHoldL = peakHoldR = -100.0f;
+        holdCountdownL = holdCountdownR = 0;
+        clipCountdownL = clipCountdownR = 0;
+        repaint();
+    }
+
+    // When the 5.1 selector routes a single channel (or a rear pair) to the
+    // needles, the face labels follow it. "L"/"R" is the normal downmix view.
+    void setSourceLabels (const juce::String& left, const juce::String& right) noexcept
+    {
+        if (sourceLabelL == left && sourceLabelR == right)
+            return;
+
+        sourceLabelL = left;
+        sourceLabelR = right;
         repaint();
     }
 
@@ -76,10 +91,23 @@ public:
     bool setLevels (float rmsLeft, float rmsRight, float newZero,
                     double deltaSeconds) noexcept
     {
+        return setLevels (rmsLeft, rmsRight, 0.0f, 0.0f, newZero, deltaSeconds);
+    }
+
+    // Same ballistics, plus per-needle sample peak for the hold marker and
+    // clip LED. 40/80/150 ms input smoothing and the 0 VU reference are
+    // unchanged; FREEZE does not gate this call.
+    bool setLevels (float rmsLeft, float rmsRight, float peakLeft, float peakRight,
+                    float newZero, double deltaSeconds) noexcept
+    {
         const float previousDisplayL = displayL;
         const float previousDisplayR = displayR;
         const float previousNumericL = numericL;
         const float previousNumericR = numericR;
+        const float previousHoldL = peakHoldL;
+        const float previousHoldR = peakHoldR;
+        const int previousClipL = clipCountdownL;
+        const int previousClipR = clipCountdownR;
 
         setZeroDbfs (newZero);
 
@@ -142,11 +170,46 @@ public:
         numericL = displayL;
         numericR = displayR;
 
+        // Peak hold: ~1.5 s still, then 18 dB/s, matching the 5.1 bargraph.
+        // Clip LEDs latch for ~2 s and are driven by the untrimmed sample peak.
+        const auto toDb = [] (float gain)
+        {
+            return gain > 1.0e-6f ? juce::jlimit (-60.0f, 6.0f,
+                                                  20.0f * (float) std::log10 ((double) gain))
+                                 : -60.0f;
+        };
+
+        const auto updatePeak = [] (float peakDb, float vuDb, float& hold,
+                                    int& holdTicks, int& clipTicks)
+        {
+            if (peakDb > -59.0f && peakDb >= hold - 0.1f)
+            {
+                hold = peakDb;
+                holdTicks = 45;
+            }
+            else if (holdTicks > 0)
+                --holdTicks;
+            else if (hold > -100.0f)
+                hold = juce::jmax (-100.0f, juce::jmax (vuDb, hold - 0.6f));
+
+            if (peakDb >= -0.2f)
+                clipTicks = 60;
+            else if (clipTicks > 0)
+                --clipTicks;
+        };
+
+        updatePeak (toDb (peakLeft), rawL, peakHoldL, holdCountdownL, clipCountdownL);
+        updatePeak (toDb (peakRight), rawR, peakHoldR, holdCountdownR, clipCountdownR);
+
         constexpr float epsilon = 0.005f;
         const bool changed = std::abs (displayL - previousDisplayL) > epsilon
                           || std::abs (displayR - previousDisplayR) > epsilon
                           || std::abs (numericL - previousNumericL) > epsilon
-                          || std::abs (numericR - previousNumericR) > epsilon;
+                          || std::abs (numericR - previousNumericR) > epsilon
+                          || std::abs (peakHoldL - previousHoldL) > epsilon
+                          || std::abs (peakHoldR - previousHoldR) > epsilon
+                          || clipCountdownL != previousClipL
+                          || clipCountdownR != previousClipR;
 
         if (changed)
             repaint();
@@ -178,13 +241,16 @@ public:
         area.removeFromLeft (gap);
         auto rightFace = area;
 
-        drawFace (g, leftFace, displayL, numericL, "L", theme::accent, scale);
-        drawFace (g, rightFace, displayR, numericR, "R", theme::cold, scale);
+        drawFace (g, leftFace, displayL, numericL, peakHoldL, clipCountdownL > 0,
+                  sourceLabelL, theme::accent, scale);
+        drawFace (g, rightFace, displayR, numericR, peakHoldR, clipCountdownR > 0,
+                  sourceLabelR, theme::cold, scale);
     }
 
 private:
     void drawFace (juce::Graphics& g, juce::Rectangle<float> face, float vu,
-                   float numeric, const juce::String& label,
+                   float numeric, float holdDb, bool clip,
+                   const juce::String& label,
                    juce::Colour needleColour, float scale)
     {
         const float fs = juce::jlimit (0.9f, 1.3f, face.getWidth() / 190.0f);
@@ -201,7 +267,16 @@ private:
         g.setColour (theme::textDim);
         g.drawText ("VU", top.removeFromLeft (18.0f * fs),
                     juce::Justification::centredLeft);
-        g.drawText (label, top, juce::Justification::centredLeft);
+
+        auto labelArea = top.removeFromLeft (26.0f * fs);
+        g.drawFittedText (label, labelArea.toNearestInt(),
+                          juce::Justification::centredLeft, 1, 0.6f);
+
+        auto clipArea = top.removeFromRight (9.0f * fs);
+        g.setColour (clip ? theme::hot : theme::panelLine.withAlpha (0.40f));
+        g.fillRoundedRectangle (clipArea.reduced (0.0f, 2.0f), 1.5f);
+
+        g.setColour (theme::textDim);
         g.drawText (numeric > -99.0f
                         ? (numeric >= 0.0f ? "+" : "") + juce::String (numeric, 1)
                         : juce::String ("--"),
@@ -292,6 +367,16 @@ private:
         g.drawText ("LUDENS", face.removeFromBottom (9.0f * fs),
                     juce::Justification::centred);
 
+        if (holdDb > -19.5f)
+        {
+            const auto holdPoint = pointFor (holdDb);
+            const auto outward = (holdPoint - juce::Point<float> (pivotX, pivotY))
+                                 / juce::jmax (1.0e-3f, radius);
+            g.setColour (theme::accent2);
+            g.drawLine ({ holdPoint, holdPoint + outward * 6.0f * scale },
+                        2.0f * scale);
+        }
+
         const auto needlePoint = pointFor (vu);
         g.setColour (needleColour);
         g.drawLine ({ juce::Point<float> (pivotX, pivotY), needlePoint }, 1.8f * scale);
@@ -308,6 +393,10 @@ private:
     float voltageL = 0.1f, voltageR = 0.1f;   // -20 VU at rest
     float velocityL = 0.0f, velocityR = 0.0f;
     float numericL = -20.0f, numericR = -20.0f;
+    float peakHoldL = -100.0f, peakHoldR = -100.0f;
+    int holdCountdownL = 0, holdCountdownR = 0;
+    int clipCountdownL = 0, clipCountdownR = 0;
+    juce::String sourceLabelL = "L", sourceLabelR = "R";
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VuMeterView)
 };

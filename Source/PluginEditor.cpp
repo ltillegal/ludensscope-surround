@@ -405,6 +405,8 @@ LudensScopeEditor::LudensScopeEditor (LudensScopeProcessor& p)
 
     readLeft.resize (readChunk);
     readRight.resize (readChunk);
+    vuMixLeft.resize (readChunk);
+    vuMixRight.resize (readChunk);
 
     for (auto& channel : readSurround)
         channel.resize (readChunk);
@@ -765,6 +767,8 @@ void LudensScopeEditor::timerCallback()
     int numRead = 0;
     const float* analysisLeft = readLeft.data();
     const float* analysisRight = readRight.data();
+    const float* vuLeft = readLeft.data();
+    const float* vuRight = readRight.data();
 
     if (surroundActive)
     {
@@ -777,9 +781,35 @@ void LudensScopeEditor::timerCallback()
 
         if (numRead > 0)
         {
-            // VU, true peak and correlation stay on the fixed ITU stereo sum.
+            // Loudness/correlation stay on the fixed ITU stereo sum. The VU
+            // needles follow the 5.1 selector; ALL uses a balanced sum so a
+            // one-sided surround cannot pin the opposite needle to its stop.
             surround::downmixToStereo (channels, readLeft.data(), readRight.data(), numRead);
             surroundView.setData (channels, numRead);
+
+            switch (selectedSurroundChannel)
+            {
+                case 1: case 2: // L / R -> natural stereo pair
+                    vuLeft = channels[0];
+                    vuRight = channels[1];
+                    break;
+                case 3:         // C -> both needles
+                    vuLeft = vuRight = channels[2];
+                    break;
+                case 4:         // LFE -> both needles, real (untrimmed) level
+                    vuLeft = vuRight = channels[3];
+                    break;
+                case 5: case 6: // Ls / Rs -> rear pair
+                    vuLeft = channels[4];
+                    vuRight = channels[5];
+                    break;
+                default:
+                    surround::downmixToStereoBalanced (channels, vuMixLeft.data(),
+                                                       vuMixRight.data(), numRead);
+                    vuLeft = vuMixLeft.data();
+                    vuRight = vuMixRight.data();
+                    break;
+            }
 
             // FFT, waterfall and oscilloscope follow the selected channel.
             if (selectedSurroundChannel > 0)
@@ -920,6 +950,7 @@ void LudensScopeEditor::timerCallback()
                           processor.clippedSampleCount(), truePeakOvers);
 
     float vuL = 0.0f, vuR = 0.0f;
+    float vuPeakL = 0.0f, vuPeakR = 0.0f;
 
     if (numRead > 0)
     {
@@ -927,10 +958,12 @@ void LudensScopeEditor::timerCallback()
 
         for (int i = 0; i < numRead; ++i)
         {
-            const double l = readLeft[(size_t) i];
-            const double r = readRight[(size_t) i];
+            const double l = vuLeft[(size_t) i];
+            const double r = vuRight[(size_t) i];
             sumL += l * l;
             sumR += r * r;
+            vuPeakL = juce::jmax (vuPeakL, (float) std::abs (l));
+            vuPeakR = juce::jmax (vuPeakR, (float) std::abs (r));
         }
 
         vuL = (float) std::sqrt (sumL / (double) numRead);
@@ -951,7 +984,22 @@ void LudensScopeEditor::timerCallback()
     }
 
     vuMeterView.setUiScale (uiScale);
-    vuMeterView.setLevels (vuL, vuR, (float) vuZeroDbfs, 1.0 / 30.0);
+
+    if (surroundActive)
+    {
+        switch (selectedSurroundChannel)
+        {
+            case 3:              vuMeterView.setSourceLabels ("C", "C");     break;
+            case 4:              vuMeterView.setSourceLabels ("LFE", "LFE"); break;
+            case 5: case 6:      vuMeterView.setSourceLabels ("Ls", "Rs");   break;
+            default:             vuMeterView.setSourceLabels ("L", "R");     break;
+        }
+    }
+    else
+        vuMeterView.setSourceLabels ("L", "R");
+
+    vuMeterView.setLevels (vuL, vuR, vuPeakL, vuPeakR,
+                           (float) vuZeroDbfs, 1.0 / 30.0);
 
     // The scopes only change when new samples arrive (plus one final frame
     // when audio stops). Repainting them forever with a stale buffer is what

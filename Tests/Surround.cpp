@@ -81,6 +81,58 @@ int main()
                    && std::all_of (outR, outR + n, [=] (float v) { return std::abs (v - expectedR) < 1.0e-5f; }));
     }
 
+    // Balanced VU sum: L/R stay discrete, C feeds both needles, Ls/Rs are
+    // shared equally, and LFE is excluded.
+    {
+        constexpr int n = 8;
+        float l[n] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+        float r[n] = { 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f };
+        float c[n] = { 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f };
+        float lfe[n] = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+        float ls[n] = { 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f };
+        float rs[n] = { 0.75f, 0.75f, 0.75f, 0.75f, 0.75f, 0.75f, 0.75f, 0.75f };
+        float* channels[surround::channelCount] = { l, r, c, lfe, ls, rs };
+        float outL[n] = {}, outR[n] = {};
+
+        surround::downmixToStereoBalanced (channels, outL, outR, n);
+
+        const float common = surround::surroundGain * 0.5f
+                           + surround::surroundShare * (0.25f + 0.75f);
+
+        check ("balanced VU downmix left channel",
+               std::all_of (outL, outL + n, [=] (float v)
+                            { return std::abs (v - (1.0f + common)) < 1.0e-5f; }));
+        check ("balanced VU downmix right channel",
+               std::all_of (outR, outR + n, [=] (float v)
+                            { return std::abs (v - (2.0f + common)) < 1.0e-5f; }));
+    }
+
+    // A one-sided surround appears equally in both VU needles, with no LFE.
+    {
+        constexpr int n = 4;
+        float silence[n] = {};
+        float ls[n] = { 1.0f, -1.0f, 1.0f, -1.0f };
+        float lfe[n] = { 1.0f, -1.0f, 1.0f, -1.0f };
+        float* channels[surround::channelCount] = { silence, silence, silence,
+                                                    lfe, ls, silence };
+        float outL[n] = {}, outR[n] = {};
+
+        surround::downmixToStereoBalanced (channels, outL, outR, n);
+
+        bool sharedEqual = true;
+
+        for (int i = 0; i < n; ++i)
+        {
+            const float expected = ls[(size_t) i] * surround::surroundShare;
+
+            if (std::abs (outL[(size_t) i] - expected) >= 1.0e-5f
+                    || std::abs (outR[(size_t) i] - expected) >= 1.0e-5f)
+                sharedEqual = false;
+        }
+
+        check ("balanced VU shares Ls and excludes LFE", sharedEqual);
+    }
+
     // LFE must not contribute to the downmix at all.
     {
         constexpr int n = 4;

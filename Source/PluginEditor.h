@@ -282,6 +282,7 @@ private:
     TruePeakDetector truePeakLeft, truePeakRight;
 
     std::vector<float> readLeft, readRight;
+    std::vector<float> vuMixLeft, vuMixRight; // balanced ALL sum for the VU only
     std::array<std::vector<float>, surround::channelCount> readSurround;
     std::array<float, scopeSize> scopeLeft {}, scopeRight {};
 
