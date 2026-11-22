@@ -366,7 +366,7 @@ namespace
         std::printf ("5.1 layout: %s (surround view replaces vector scope)\n",
                      layoutOk ? "ok" : "FAIL");
 
-        // Selecting a channel routes FFT/waterfall/scope and persists in state.
+        // Selecting a group routes FFT/waterfall/scope and persists in state.
         if (surround != nullptr)
             surround->onChannelSelect (4);
 

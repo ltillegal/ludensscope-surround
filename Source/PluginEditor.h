@@ -287,7 +287,8 @@ private:
     std::array<float, scopeSize> scopeLeft {}, scopeRight {};
 
     bool surroundActive = false;
-    int selectedSurroundChannel = 0; // 0 = ALL, 1..6 = L, R, C, LFE, Ls, Rs
+    // 0 = ALL, 1 = L+R, 2 = C, 3 = LFE, 4 = Ls+Rs.
+    int selectedSurroundChannel = 0;
 
     double preparedSampleRate = 0.0;
     bool frozen = false;

@@ -50,6 +50,10 @@ int main()
     };
 
     check ("5.1 uses six discrete channels", surround::channelCount == 6);
+    check ("ALL, L+R, C, LFE, Ls+Rs selector",
+           surround::selectionCount == 5 && surround::frontPair == 1
+               && surround::centreOnly == 2 && surround::lfeOnly == 3
+               && surround::rearPair == 4);
     check ("SMPTE order L R C LFE Ls Rs",
            surround::left == 0 && surround::right == 1 && surround::centre == 2
                && surround::lfe == 3 && surround::leftSurround == 4

@@ -10,7 +10,7 @@
 namespace
 {
     constexpr int snapshotMagic = 0x4c444e53; // 'LDNS'
-    constexpr int snapshotVersion = 18;
+    constexpr int snapshotVersion = 20;
 }
 
 namespace
@@ -478,6 +478,24 @@ void LudensScopeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
         inputChannels > 4 ? buffer.getReadPointer (4) : left,
         inputChannels > 5 ? buffer.getReadPointer (5) : left
     };
+
+    // The Linux standalone captures the ALSA/PipeWire monitor of the analog
+    // 5.1 sink. That sink is wired as L, R, Ls, Rs, C, LFE (ALSA order), while
+    // every meter, downmix and scope here expects SMPTE order. JUCE passes the
+    // monitor channels through unchanged, so reorder them before anything
+    // else sees them. Inside a DAW the host already supplies SMPTE order.
+    if (surround && juce::JUCEApplicationBase::isStandaloneApp())
+    {
+        const float* alsa[surround::channelCount] = {
+            analysis[0], analysis[1], analysis[2],
+            analysis[3], analysis[4], analysis[5]
+        };
+
+        analysis[2] = alsa[4]; // C
+        analysis[3] = alsa[5]; // LFE
+        analysis[4] = alsa[2]; // Ls
+        analysis[5] = alsa[3]; // Rs
+    }
 
     fifoChannelCount.store (analysisChannels, std::memory_order_relaxed);
 
@@ -977,7 +995,7 @@ void LudensScopeProcessor::setStateInformation (const void* data, int sizeInByte
     const int selected = stream.readInt();
 
     if (magic != snapshotMagic
-        || (version < 1 || version > 18)
+        || (version < 1 || version > 20)
         || slots != snapshotSlots || bins != snapshotBins)
         return;
 
@@ -1079,7 +1097,38 @@ void LudensScopeProcessor::setStateInformation (const void* data, int sizeInByte
         }
 
         if (version >= 18)
-            view.surroundChannel = juce::jlimit (0, surround::channelCount, stream.readInt());
+        {
+            const int stored = stream.readInt();
+
+            if (version >= 20)
+            {
+                view.surroundChannel = juce::jlimit (0, surround::selectionCount - 1, stored);
+            }
+            else
+            {
+                // Versions 18/19 used the old ALL + six discrete channels
+                // layout; version 19 also had the two pair entries. Collapse
+                // either form onto ALL / L+R / C / LFE / Ls+Rs.
+                switch (stored)
+                {
+                    case 1: case 2: case 7:
+                        view.surroundChannel = surround::frontPair;
+                        break;
+                    case 3:
+                        view.surroundChannel = surround::centreOnly;
+                        break;
+                    case 4:
+                        view.surroundChannel = surround::lfeOnly;
+                        break;
+                    case 5: case 6: case 8:
+                        view.surroundChannel = surround::rearPair;
+                        break;
+                    default:
+                        view.surroundChannel = 0;
+                        break;
+                }
+            }
+        }
 
         if (view.waterfallHistory != 1 && view.waterfallHistory != 2
             && view.waterfallHistory != 4)

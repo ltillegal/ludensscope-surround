@@ -164,9 +164,10 @@ cmake --build --preset dev -j$(nproc)
    Files longer than 10 minutes are truncated.
 
    In 5.1 the vector scope is replaced by a room view of the six decoded
-   channels (L, R, C, LFE, Ls, Rs) with levels and peak hold. PRO can select
-   `ALL` or one channel for the FFT, waterfall and oscilloscope; VU, loudness
-   and true peak always use the fixed ITU stereo downmix (LFE excluded).
+   channels (L, R, C, LFE, Ls, Rs) with levels and peak hold. The PRO selector
+   offers `ALL`, `L+R`, `C`, `LFE` and `Ls+Rs` and drives the FFT, waterfall,
+   oscilloscope and VU; loudness and true peak always use the fixed ITU stereo
+   downmix (LFE excluded).
    The channels must already be decoded — the plugin does not decode AC-3
    itself; feed it six discrete channels from an external ffmpeg bridge.
 

@@ -6,6 +6,13 @@ namespace surround
 {
     constexpr int channelCount = 6;
 
+    // Surround view selection: ALL, front pair, centre, LFE, rear pair.
+    constexpr int selectionCount = 5;
+    constexpr int frontPair = 1;   // L + R
+    constexpr int centreOnly = 2;  // C
+    constexpr int lfeOnly = 3;     // LFE
+    constexpr int rearPair = 4;    // Ls + Rs
+
     // Decoded 5.1 arrives in SMPTE/ITU order: L, R, C, LFE, Ls, Rs.
     enum Channel
     {

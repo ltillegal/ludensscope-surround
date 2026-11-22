@@ -67,6 +67,21 @@ namespace theme
     inline juce::Colour hot        { 0xffff8a7a };
     inline juce::Colour cold       { 0xffa6c6ff };
 
+    // Shared 5.1 channel palette, so the bargraph, selector and VU needles
+    // always agree on which colour belongs to L, R, C, LFE, Ls and Rs.
+    inline juce::Colour channelColour (int index) noexcept
+    {
+        switch (index)
+        {
+            case 0: return accent;
+            case 1: return accent2;
+            case 2: return cold;
+            case 3: return textDim;
+            case 4: return hot;
+            default: return hot.brighter (0.25f);
+        }
+    }
+
     inline int currentTheme = 0;
 
     inline void setTheme (int index)

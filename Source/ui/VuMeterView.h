@@ -59,6 +59,18 @@ public:
         repaint();
     }
 
+    // -1 keeps the regular stereo needle colours (accent/cold). Otherwise the
+    // numbers are SMPTE channel indices: 0=L, 1=R, 2=C, 3=LFE, 4=Ls, 5=Rs.
+    void setSourceChannels (int left, int right) noexcept
+    {
+        if (sourceChannelL == left && sourceChannelR == right)
+            return;
+
+        sourceChannelL = left;
+        sourceChannelR = right;
+        repaint();
+    }
+
     void setZeroDbfs (float newZero) noexcept
     {
         const float next = juce::jlimit (-30.0f, -6.0f, newZero);
@@ -241,10 +253,15 @@ public:
         area.removeFromLeft (gap);
         auto rightFace = area;
 
+        const auto leftNeedle = sourceChannelL >= 0 ? theme::channelColour (sourceChannelL)
+                                                    : theme::accent;
+        const auto rightNeedle = sourceChannelR >= 0 ? theme::channelColour (sourceChannelR)
+                                                     : theme::cold;
+
         drawFace (g, leftFace, displayL, numericL, peakHoldL, clipCountdownL > 0,
-                  sourceLabelL, theme::accent, scale);
+                  sourceLabelL, leftNeedle, scale);
         drawFace (g, rightFace, displayR, numericR, peakHoldR, clipCountdownR > 0,
-                  sourceLabelR, theme::cold, scale);
+                  sourceLabelR, rightNeedle, scale);
     }
 
 private:
@@ -387,6 +404,7 @@ private:
 private:
     float uiScale = 1.0f;
     int inputSmoothingMs = 80;
+    int sourceChannelL = -1, sourceChannelR = -1;
     float powerL = 0.0f, powerR = 0.0f;
     float zeroDbfs = -18.0f;
     float displayL = -20.0f, displayR = -20.0f;

@@ -348,7 +348,7 @@ LudensScopeEditor::LudensScopeEditor (LudensScopeProcessor& p)
             return;
         }
 
-        selectedSurroundChannel = juce::jlimit (0, surround::channelCount, index);
+        selectedSurroundChannel = juce::jlimit (0, surround::selectionCount - 1, index);
         surroundView.setSelectedChannel (selectedSurroundChannel);
         saveViewSettings();
     };
@@ -789,21 +789,21 @@ void LudensScopeEditor::timerCallback()
 
             switch (selectedSurroundChannel)
             {
-                case 1: case 2: // L / R -> natural stereo pair
-                    vuLeft = channels[0];
-                    vuRight = channels[1];
+                case surround::frontPair:
+                    vuLeft = channels[surround::left];
+                    vuRight = channels[surround::right];
                     break;
-                case 3:         // C -> both needles
-                    vuLeft = vuRight = channels[2];
+                case surround::centreOnly: // C -> both needles
+                    vuLeft = vuRight = channels[surround::centre];
                     break;
-                case 4:         // LFE -> both needles, real (untrimmed) level
-                    vuLeft = vuRight = channels[3];
+                case surround::lfeOnly: // LFE -> both needles, real (untrimmed) level
+                    vuLeft = vuRight = channels[surround::lfe];
                     break;
-                case 5: case 6: // Ls / Rs -> rear pair
-                    vuLeft = channels[4];
-                    vuRight = channels[5];
+                case surround::rearPair:
+                    vuLeft = channels[surround::leftSurround];
+                    vuRight = channels[surround::rightSurround];
                     break;
-                default:
+                default: // ALL
                     surround::downmixToStereoBalanced (channels, vuMixLeft.data(),
                                                        vuMixRight.data(), numRead);
                     vuLeft = vuMixLeft.data();
@@ -811,9 +811,28 @@ void LudensScopeEditor::timerCallback()
                     break;
             }
 
-            // FFT, waterfall and oscilloscope follow the selected channel.
-            if (selectedSurroundChannel > 0)
-                analysisLeft = analysisRight = channels[(size_t) (selectedSurroundChannel - 1)];
+            // FFT/waterfall/scope follow a single channel or a real stereo pair:
+            // the analyzer sums its two inputs for the spectrum, while the
+            // oscilloscope keeps both wires visible.
+            switch (selectedSurroundChannel)
+            {
+                case surround::frontPair:
+                    analysisLeft = channels[surround::left];
+                    analysisRight = channels[surround::right];
+                    break;
+                case surround::centreOnly:
+                    analysisLeft = analysisRight = channels[surround::centre];
+                    break;
+                case surround::lfeOnly:
+                    analysisLeft = analysisRight = channels[surround::lfe];
+                    break;
+                case surround::rearPair:
+                    analysisLeft = channels[surround::leftSurround];
+                    analysisRight = channels[surround::rightSurround];
+                    break;
+                default:
+                    break;
+            }
         }
     }
     else
@@ -989,14 +1008,29 @@ void LudensScopeEditor::timerCallback()
     {
         switch (selectedSurroundChannel)
         {
-            case 3:              vuMeterView.setSourceLabels ("C", "C");     break;
-            case 4:              vuMeterView.setSourceLabels ("LFE", "LFE"); break;
-            case 5: case 6:      vuMeterView.setSourceLabels ("Ls", "Rs");   break;
-            default:             vuMeterView.setSourceLabels ("L", "R");     break;
+            case surround::centreOnly:
+                vuMeterView.setSourceLabels ("C", "C");
+                vuMeterView.setSourceChannels (surround::centre, surround::centre);
+                break;
+            case surround::lfeOnly:
+                vuMeterView.setSourceLabels ("LFE", "LFE");
+                vuMeterView.setSourceChannels (surround::lfe, surround::lfe);
+                break;
+            case surround::rearPair:
+                vuMeterView.setSourceLabels ("Ls", "Rs");
+                vuMeterView.setSourceChannels (surround::leftSurround, surround::rightSurround);
+                break;
+            default: // ALL and L+R use the normal front stereo needles
+                vuMeterView.setSourceLabels ("L", "R");
+                vuMeterView.setSourceChannels (surround::left, surround::right);
+                break;
         }
     }
     else
+    {
         vuMeterView.setSourceLabels ("L", "R");
+        vuMeterView.setSourceChannels (-1, -1);
+    }
 
     vuMeterView.setLevels (vuL, vuR, vuPeakL, vuPeakR,
                            (float) vuZeroDbfs, 1.0 / 30.0);
@@ -1918,7 +1952,8 @@ void LudensScopeEditor::applyViewSettings (const LudensScopeProcessor::ViewSetti
 
     meterPanel.setTarget (settings.targetLufs);
 
-    selectedSurroundChannel = juce::jlimit (0, surround::channelCount, settings.surroundChannel);
+    selectedSurroundChannel = juce::jlimit (0, surround::selectionCount - 1,
+                                          settings.surroundChannel);
     surroundView.setSelectedChannel (selectedSurroundChannel);
 
     oscilloscopeView.setWindowSamples (settings.oscWindow);

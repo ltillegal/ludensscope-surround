@@ -17,13 +17,14 @@ class SurroundView : public juce::Component,
                      public juce::SettableTooltipClient
 {
 public:
-    static constexpr int totalChannels = surround::channelCount + 1; // ALL + 6
+    static constexpr int totalChannels = surround::selectionCount; // ALL, L+R, C, LFE, Ls+Rs
 
     SurroundView()
     {
         setOpaque (true);
         setBufferedToImage (true);
-        setTooltip ("5.1 channel meters. Click a strip to route the FFT, waterfall and scope. "
+        setTooltip ("5.1 channel meters. Choose ALL, L+R, C, LFE or Ls+Rs to route the FFT, "
+                    "waterfall and scope; clicking a strip selects its group. "
                     "LFE uses a +10 dB display trim.");
     }
 
@@ -96,7 +97,7 @@ public:
 
     void setSelectedChannel (int index) noexcept
     {
-        selected = juce::jlimit (0, surround::channelCount, index);
+        selected = juce::jlimit (0, surround::selectionCount - 1, index);
         repaint();
     }
 
@@ -185,7 +186,19 @@ public:
             if (meterBounds[(size_t) c].contains (e.getPosition().toFloat()))
             {
                 if (onChannelSelect != nullptr)
-                    onChannelSelect (c + 1);
+                {
+                    int choice = surround::frontPair;
+
+                    if (c == surround::centre)
+                        choice = surround::centreOnly;
+                    else if (c == surround::lfe)
+                        choice = surround::lfeOnly;
+                    else if (c >= surround::leftSurround)
+                        choice = surround::rearPair;
+
+                    onChannelSelect (choice);
+                }
+
                 return;
             }
         }
@@ -218,14 +231,50 @@ private:
 
     static juce::Colour channelColour (int index) noexcept
     {
-        switch (index)
+        return theme::channelColour (index);
+    }
+
+    static bool selectionIncludes (int selection, int channel) noexcept
+    {
+        if (selection == surround::frontPair)
+            return channel == surround::left || channel == surround::right;
+
+        if (selection == surround::rearPair)
+            return channel == surround::leftSurround || channel == surround::rightSurround;
+
+        if (selection == surround::centreOnly)
+            return channel == surround::centre;
+
+        return selection == surround::lfeOnly && channel == surround::lfe;
+    }
+
+    static juce::Colour selectionColour (int selection) noexcept
+    {
+        if (selection == 0)
+            return theme::text;
+
+        if (selection == surround::frontPair)
+            return channelColour (surround::left)
+                       .interpolatedWith (channelColour (surround::right), 0.5f);
+
+        if (selection == surround::rearPair)
+            return channelColour (surround::leftSurround)
+                       .interpolatedWith (channelColour (surround::rightSurround), 0.5f);
+
+        return channelColour (selection == surround::centreOnly ? surround::centre
+                                                                 : surround::lfe);
+    }
+
+    static const char* selectionLabel (int selection) noexcept
+    {
+        switch (selection)
         {
-            case 0: return theme::accent;
-            case 1: return theme::accent2;
-            case 2: return theme::cold;
-            case 3: return theme::textDim;
-            case 4: return theme::hot;
-            default: return theme::hot.brighter (0.25f);
+            case 0:                            return "ALL";
+            case surround::frontPair:          return "L+R";
+            case surround::centreOnly:         return "C";
+            case surround::lfeOnly:            return "LFE";
+            case surround::rearPair:           return "Ls+Rs";
+            default:                           return "";
         }
     }
 
@@ -244,17 +293,17 @@ private:
             selectorBounds[(size_t) i] = button;
 
             const bool active = i == selected;
-            const auto colour = i == 0 ? theme::text : channelColour (i - 1);
+            const auto colour = selectionColour (i);
 
             g.setColour (active ? colour : theme::panel);
             g.fillRoundedRectangle (button.toFloat(), 3.0f);
             g.setColour (active ? colour.withAlpha (0.9f) : theme::panelLine);
             g.drawRoundedRectangle (button.toFloat().reduced (0.5f), 3.0f, 1.0f);
 
-            g.setFont (theme::detailFont (i == 0 ? 7.5f : 8.0f, uiScale));
+            const bool isPair = i == surround::frontPair || i == surround::rearPair;
+            g.setFont (theme::detailFont (i == 0 || isPair ? 7.5f : 8.0f, uiScale));
             g.setColour (active ? theme::bg : (locked ? theme::textDim : colour));
-            g.drawText (i == 0 ? "ALL" : channelName (i - 1), button,
-                        juce::Justification::centred);
+            g.drawText (selectionLabel (i), button, juce::Justification::centred);
 
             area.removeFromLeft (gap);
         }
@@ -312,7 +361,7 @@ private:
             const auto& meter = meters[(size_t) c];
             const float trim = c == surround::lfe ? 10.0f : 0.0f;
             const float x = trackX + (float) c * (barW + gap);
-            const bool active = selected == c + 1;
+            const bool active = selectionIncludes (selected, c);
 
             meterBounds[(size_t) c] = juce::Rectangle<float> (x - gap * 0.5f, box.getY(),
                                                               barW + gap, box.getHeight());
