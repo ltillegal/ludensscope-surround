@@ -359,7 +359,13 @@ private:
         for (int c = 0; c < surround::channelCount; ++c)
         {
             const auto& meter = meters[(size_t) c];
-            const float trim = c == surround::lfe ? 10.0f : 0.0f;
+
+            // Keep the +10 dB LFE display trim for real signal only. Applying it
+            // to the -60 dB silence floor leaves an empty LFE meter visibly
+            // filled around -50 dB, while its numeric label correctly says -inf.
+            const bool lfeRmsSignal = c == surround::lfe && meter.shownRmsDb > -59.0f;
+            const bool lfePeakSignal = c == surround::lfe && meter.peakDb > -59.0f;
+            const bool lfeHoldSignal = c == surround::lfe && meter.holdDb > -59.0f;
             const float x = trackX + (float) c * (barW + gap);
             const bool active = selectionIncludes (selected, c);
 
@@ -375,7 +381,8 @@ private:
             g.setColour (theme::bg.withAlpha (0.65f));
             g.fillRect (x, trackY, barW, trackH);
 
-            const float rmsY = yForDb (meter.shownRmsDb + trim, trackY, trackH);
+            const float rmsY = yForDb (meter.shownRmsDb + (lfeRmsSignal ? 10.0f : 0.0f),
+                                       trackY, trackH);
             const float fillH = trackY + trackH - rmsY;
 
             if (fillH > 0.5f)
@@ -389,13 +396,15 @@ private:
             }
 
             // Instantaneous peak cap and the delayed peak-hold marker.
-            const float peakY = yForDb (meter.peakDb + trim, trackY, trackH);
+            const float peakY = yForDb (meter.peakDb + (lfePeakSignal ? 10.0f : 0.0f),
+                                        trackY, trackH);
             g.setColour (theme::text.withAlpha (0.85f));
             g.fillRect (x, peakY, barW, juce::jmax (1.0f, 1.5f * uiScale));
 
             if (meter.holdDb > -59.0f)
             {
-                const float holdY = yForDb (meter.holdDb + trim, trackY, trackH);
+                const float holdY = yForDb (meter.holdDb + (lfeHoldSignal ? 10.0f : 0.0f),
+                                            trackY, trackH);
                 g.setColour (meter.peakDb >= -1.0f ? theme::hot : theme::accent2);
                 g.fillRect (x, holdY - 0.5f, barW, juce::jmax (1.0f, 1.5f * uiScale));
             }
