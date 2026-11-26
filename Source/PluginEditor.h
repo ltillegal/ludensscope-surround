@@ -111,6 +111,7 @@ private:
     void toggleReferenceAb();
     void updateReferenceGain();
     void showFftMenu();
+    void toggleFftExpanded();
     bool isFull() const { return LudensScopeLicence::isUnlocked(); }
     void showUnlockDialog();
     void applyEdition();
@@ -214,6 +215,7 @@ private:
     int waterfallHistory = 2;
     int soloZone = -1;
     bool applyingSettings = false;
+    bool fftExpanded = false;
 
     // State captured before the last RESET.
     bool undoSnapshotValid = false;

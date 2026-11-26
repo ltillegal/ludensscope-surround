@@ -383,6 +383,8 @@ LudensScopeEditor::LudensScopeEditor (LudensScopeProcessor& p)
         applyRange (20.0f, 20000.0f);
     };
 
+    spectrumView.onToggleExpand = [this] { toggleFftExpanded(); };
+
     spectrumView.setSnapshots (snapshots, snapshotFilled, snapshotSlot);
 
     spectrumView.onSnapshotSelect = [this] (int slot)
@@ -610,6 +612,7 @@ void LudensScopeEditor::resized()
     oscilloscopeView.setUiScale (uiScale);
     referenceStrip.setUiScale (uiScale);
     vuMeterView.setUiScale (uiScale);
+    spectrumView.setExpanded (fftExpanded);
 
     auto header = r.removeFromTop (juce::roundToInt (36.0f * uiScale));
     const int themeWidth = juce::roundToInt (90.0f * uiScale);
@@ -625,6 +628,75 @@ void LudensScopeEditor::resized()
     const int gap = juce::roundToInt (10.0f * uiScale);
     const int railWidth = juce::roundToInt (88.0f * uiScale);
     const int stripHeight = juce::jlimit (80, 160, juce::roundToInt (100.0f * uiScale));
+
+    // The right rail stays in both layouts. Keeping its sizing in one place
+    // makes the fullscreen FFT indistinguishable from the normal button row.
+    auto layOutRail = [this, gap, railWidth] (juce::Rectangle<int> area,
+                                              int reclaimedHeight) -> juce::Rectangle<int>
+    {
+        railBounds = area.removeFromRight (railWidth);
+        area.removeFromRight (gap);
+
+        auto rail = railBounds.withTrimmedLeft (2).withTrimmedRight (2)
+                              .withTrimmedTop (juce::roundToInt (8.0f * uiScale));
+        // Buttons keep their PRO size; only the analysis panels grow in Lite.
+        const int available = juce::jmax (0, rail.getHeight() - reclaimedHeight);
+
+        juce::Component* const buttons[] = {
+            &fftButton, &guidesButton, &spanButton, &monoButton,
+            &captureButton, &freezeButton, &undoButton, &resetButton, &donateButton
+        };
+
+        int buttonCount = 0;
+        for (auto* button : buttons)
+            if (button->isVisible())
+                ++buttonCount;
+
+        buttonCount = juce::jmax (1, buttonCount);
+
+        const int buttonGap = juce::roundToInt (2.0f * uiScale);
+        const int buttonHeight = juce::jmax (
+            juce::roundToInt (22.0f * uiScale),
+            (available - buttonGap * (buttonCount - 1)) / buttonCount);
+
+        const int stackHeight = buttonHeight * buttonCount + buttonGap * (buttonCount - 1);
+        auto stack = rail.withHeight (juce::jmin (available, stackHeight));
+
+        for (auto* button : buttons)
+        {
+            if (! button->isVisible())
+                continue;
+
+            button->setBounds (stack.removeFromTop (buttonHeight));
+            stack.removeFromTop (buttonGap);
+        }
+
+        return area;
+    };
+
+    if (fftExpanded)
+    {
+        auto expandedArea = layOutRail (getLocalBounds().reduced (14), 0);
+
+        spectrumView.setBounds (expandedArea);
+        spectrogramView.setBounds ({});
+        meterPanel.setBounds ({});
+        vectorScopeView.setBounds ({});
+        surroundView.setBounds ({});
+        vuMeterView.setBounds ({});
+        oscilloscopeView.setBounds ({});
+        // These sit above the spectrum in z-order. Clearing their bounds keeps
+        // the FFT alone in the window and leaves the corner hotspot clickable
+        // in fullscreen too; the normal layout below restores them.
+        referenceStrip.setBounds ({});
+        origButton.setBounds ({});
+        refButton.setBounds ({});
+        themeButton.setBounds ({});
+        unlockButton.setBounds ({});
+        waterfallDivider = {};
+        leftColumnBounds = expandedArea;
+        return;
+    }
 
     // Lite has no reference band: its height is handed to the analysis row
     // above (FFT/waterfall and loudness), while the scope row below keeps its
@@ -651,42 +723,7 @@ void LudensScopeEditor::resized()
         reclaimedHeight = stripHeight + gap;
     }
 
-    railBounds = r.removeFromRight (railWidth);
-    r.removeFromRight (juce::roundToInt (10.0f * uiScale));
-
-    auto rail = railBounds.withTrimmedLeft (2).withTrimmedRight (2)
-                          .withTrimmedTop (juce::roundToInt (8.0f * uiScale));
-    // Buttons keep their PRO size; only the analysis panels grow in Lite.
-    const int available = juce::jmax (0, rail.getHeight() - reclaimedHeight);
-
-    juce::Component* const buttons[] = {
-        &fftButton, &guidesButton, &spanButton, &monoButton,
-        &captureButton, &freezeButton, &undoButton, &resetButton, &donateButton
-    };
-
-    int buttonCount = 0;
-    for (auto* button : buttons)
-        if (button->isVisible())
-            ++buttonCount;
-
-    buttonCount = juce::jmax (1, buttonCount);
-
-    const int buttonGap = juce::roundToInt (2.0f * uiScale);
-    const int buttonHeight = juce::jmax (
-        juce::roundToInt (22.0f * uiScale),
-        (available - buttonGap * (buttonCount - 1)) / buttonCount);
-
-    const int stackHeight = buttonHeight * buttonCount + buttonGap * (buttonCount - 1);
-    auto stack = rail.withHeight (juce::jmin (available, stackHeight));
-
-    for (auto* button : buttons)
-    {
-        if (! button->isVisible())
-            continue;
-
-        button->setBounds (stack.removeFromTop (buttonHeight));
-        stack.removeFromTop (buttonGap);
-    }
+    r = layOutRail (r, reclaimedHeight);
 
     // The scope row is sized from the height the window had with the strip,
     // so reclaimed space never inflates VU, stereo image or oscilloscope.
@@ -2862,6 +2899,14 @@ void LudensScopeEditor::cycleSpan()
     applyRange (centre / halfSpan, centre * halfSpan);
 }
 
+void LudensScopeEditor::toggleFftExpanded()
+{
+    fftExpanded = ! fftExpanded;
+    spectrumView.setExpanded (fftExpanded);
+    resized();
+    repaint();
+}
+
 void LudensScopeEditor::applyRange (float lowHz, float highHz)
 {
     lowHz = juce::jlimit (20.0f, 19801.0f, lowHz);
@@ -2893,7 +2938,11 @@ bool LudensScopeEditor::keyPressed (const juce::KeyPress& key)
 
     if (key.getKeyCode() == juce::KeyPress::escapeKey)
     {
-        clearGuideSolo();
+        if (fftExpanded)
+            toggleFftExpanded();
+        else
+            clearGuideSolo();
+
         return true;
     }
 
