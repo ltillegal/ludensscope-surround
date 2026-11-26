@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.0
+
+- Added the same transparent fullscreen FFT toggle in the spectrum corner: FFT fills the window while the right rail stays available, and the same corner or `Escape` restores the normal layout.
+- Raised the LFE meter trim only for real signal, so silence stays at the `-60 dB` floor.
+
 ## 2.1.4
 
 - Reduced the PRO surround selector to exactly `ALL`, `L+R`, `C`, `LFE` and `Ls+Rs`; clicking a meter strip selects its group.
