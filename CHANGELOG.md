@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.2
+
+- The reference strip now ends with the same gutter as every other panel: it ran straight into the ORIG/REF column while the scope row above kept its gap. Same layout code, one missing `removeFromRight (gap)`.
+- No changes to the discrete 5.1 routing, BS.1770 weighting or LFE handling.
+
 ## 2.2.1
 
 - Rounded popup menus, submenus and tooltips with a pill highlight, matching the rest of the interface.
