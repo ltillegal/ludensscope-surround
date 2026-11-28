@@ -282,6 +282,8 @@ private:
     SpectrumAnalyzer sideAnalyzer;
     std::vector<float> sideBuffer;
     TruePeakDetector truePeakLeft, truePeakRight;
+    // Loudness of the signal selected by the 5.1 group selector (VU sources).
+    LoudnessMeter selectionLoudness;
 
     std::vector<float> readLeft, readRight;
     std::vector<float> vuMixLeft, vuMixRight; // balanced ALL sum for the VU only

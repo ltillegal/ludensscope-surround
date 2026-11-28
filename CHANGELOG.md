@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.3
+
+- The 5.1 room panel is now 1.5x the square scope width; the oscilloscope gives up the difference and the VU keeps its previous size. Narrow windows keep a usable scope strip.
+- Loudness follows the 5.1 selector just like the VU: ALL uses the balanced monitor sum, while L+R, C, LFE and Ls+Rs are measured directly. Changing the selection resets the measurement, and level match uses the same selection.
+- True peak and correlation stay on the fixed ITU stereo sum; the processor's BS.1770 decoder is unchanged.
+
 ## 2.2.2
 
 - The reference strip now ends with the same gutter as every other panel: it ran straight into the ORIG/REF column while the scope row above kept its gap. Same layout code, one missing `removeFromRight (gap)`.

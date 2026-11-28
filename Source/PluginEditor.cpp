@@ -399,11 +399,16 @@ LudensScopeEditor::LudensScopeEditor (LudensScopeProcessor& p)
 
         selectedSurroundChannel = juce::jlimit (0, surround::selectionCount - 1, index);
         surroundView.setSelectedChannel (selectedSurroundChannel);
+        selectionLoudness.reset();
         saveViewSettings();
     };
 
     meterPanel.onTargetChange = [this] (float) { saveViewSettings(); };
-    meterPanel.onResetIntegrated = [this] { processor.requestIntegratedReset(); };
+    meterPanel.onResetIntegrated = [this]
+    {
+        processor.requestIntegratedReset();
+        selectionLoudness.resetIntegrated();
+    };
     oscilloscopeView.onSettingsChanged = [this] { saveViewSettings(); };
 
     spectrogramView.setPushDivider (waterfallHistory);
@@ -465,6 +470,7 @@ LudensScopeEditor::LudensScopeEditor (LudensScopeProcessor& p)
     preparedSampleRate = processor.getSampleRate() > 0.0 ? processor.getSampleRate() : 48000.0;
     analyzer.prepare (preparedSampleRate);
     sideAnalyzer.prepare (preparedSampleRate);
+    selectionLoudness.prepare (preparedSampleRate);
     oscilloscopeView.setSampleRate (preparedSampleRate);
 
     applyFftSettings (processor.getFftSettings());
@@ -803,7 +809,24 @@ void LudensScopeEditor::resized()
     meterPanel.setUiScale (juce::jmin (uiScale,
         (float) rightColumn.getHeight() / 373.0f));
 
-    auto vectorBounds = bottom.removeFromLeft (bottomHeight);
+    // Derive the VU width from the space left after the square scope in the
+    // original layout, so widening the 5.1 panel costs only the oscilloscope.
+    constexpr float vuShrink = 0.85f;
+    const int scopeRowWidth = bottom.getWidth();
+    const int vuBaseline = juce::jmax (0, scopeRowWidth - bottomHeight - gap);
+    const int fullVuWidth = juce::jlimit (240, 480,
+                                          juce::jmin (juce::roundToInt (400.0f * uiScale),
+                                                      juce::roundToInt ((float) vuBaseline * 0.50f)));
+    const int vuWidth = juce::jmax (200, juce::roundToInt ((float) fullVuWidth * vuShrink));
+
+    // In 5.1 the room panel gets 1.5x the square scope width; the oscilloscope
+    // absorbs the difference. Keep a usable scope strip on narrow windows.
+    const int vectorWidth = surroundActive
+        ? juce::jmin (juce::roundToInt (1.5f * (float) bottomHeight),
+                      juce::jmax (bottomHeight, scopeRowWidth - vuWidth - 2 * gap - 160))
+        : bottomHeight;
+
+    auto vectorBounds = bottom.removeFromLeft (vectorWidth);
     bottom.removeFromLeft (gap);
 
     vectorScopeView.setVisible (! surroundActive);
@@ -817,14 +840,10 @@ void LudensScopeEditor::resized()
 
     // The VU meter keeps its narrower width, but shares the full row height
     // with the stereo image and the oscilloscope. Only its width is shrunk.
-    constexpr float vuShrink = 0.85f;
-    const int fullVuWidth = juce::jlimit (240, 480,
-                                          juce::jmin (juce::roundToInt (400.0f * uiScale),
-                                                      juce::roundToInt (bottom.getWidth() * 0.50f)));
-    const int vuWidth = juce::jmax (200, juce::roundToInt ((float) fullVuWidth * vuShrink));
     const int vuHeight = bottom.getHeight();
-    auto vuBounds = bottom.removeFromLeft (vuWidth)
-                          .withSizeKeepingCentre (vuWidth, vuHeight);
+    const int usableVuWidth = juce::jmin (vuWidth, bottom.getWidth());
+    auto vuBounds = bottom.removeFromLeft (usableVuWidth)
+                          .withSizeKeepingCentre (usableVuWidth, vuHeight);
     bottom.removeFromLeft (gap);
 
     vuMeterView.setBounds (vuBounds);
@@ -840,6 +859,8 @@ void LudensScopeEditor::timerCallback()
         preparedSampleRate = sampleRate;
         analyzer.prepare (sampleRate);
         sideAnalyzer.prepare (sampleRate);
+        selectionLoudness.prepare (sampleRate);
+        selectionLoudness.reset();
         oscilloscopeView.setSampleRate (sampleRate);
 
         // Cached reference audio is at the old rate; reload it.
@@ -949,6 +970,10 @@ void LudensScopeEditor::timerCallback()
         const float* left = readLeft.data();
         const float* right = readRight.data();
 
+        // Loudness follows the 5.1 selector through the same pair the VU reads:
+        // L+R, C, LFE and Ls+Rs are measured directly; ALL uses the balanced sum.
+        selectionLoudness.process (vuLeft, vuRight, numRead);
+
         blockTruePeak = std::max (truePeakLeft.process (left, numRead),
                                   truePeakRight.process (right, numRead));
 
@@ -1045,14 +1070,14 @@ void LudensScopeEditor::timerCallback()
     if (truePeakDb > truePeakHoldDb)
         truePeakHoldDb = truePeakDb;
 
-    const float integrated = processor.integratedLufs();
+    const float integrated = selectionLoudness.integratedLufs();
     const float plr = (integrated > -70.0f && truePeakHoldDb > -99.0f)
                           ? truePeakHoldDb - integrated
                           : -100.0f;
 
-    const bool meterChanged = meterPanel.setValues (processor.momentaryLufs(),
-                          processor.shortTermLufs(), integrated, truePeakDb, samplePeakDb,
-                          correlation, truePeakHoldDb, processor.lraLu(), plr,
+    const bool meterChanged = meterPanel.setValues (selectionLoudness.momentaryLufs(),
+                          selectionLoudness.shortTermLufs(), integrated, truePeakDb, samplePeakDb,
+                          correlation, truePeakHoldDb, selectionLoudness.lraLu(), plr,
                           processor.clippedSampleCount(), truePeakOvers);
 
     float vuL = 0.0f, vuR = 0.0f;
@@ -1870,7 +1895,8 @@ void LudensScopeEditor::exportSnapshots()
 
 void LudensScopeEditor::updateReferenceGain()
 {
-    float mixLufs = processor.integratedLufs();
+    // Level match follows the same selection as the displayed loudness.
+    float mixLufs = selectionLoudness.integratedLufs();
     const float referenceLufs = processor.referenceLufs();
 
     if (mixLufs < -70.0f)
@@ -2039,8 +2065,13 @@ void LudensScopeEditor::applyViewSettings (const LudensScopeProcessor::ViewSetti
 
     meterPanel.setTarget (settings.targetLufs);
 
-    selectedSurroundChannel = juce::jlimit (0, surround::selectionCount - 1,
-                                          settings.surroundChannel);
+    const int restoredSelection = juce::jlimit (0, surround::selectionCount - 1,
+                                                settings.surroundChannel);
+
+    if (restoredSelection != selectedSurroundChannel)
+        selectionLoudness.reset();
+
+    selectedSurroundChannel = restoredSelection;
     surroundView.setSelectedChannel (selectedSurroundChannel);
 
     oscilloscopeView.setWindowSamples (settings.oscWindow);
@@ -2458,6 +2489,7 @@ void LudensScopeEditor::refreshBusLayout()
         return;
 
     surroundActive = nowSurround;
+    selectionLoudness.reset();
     scopeLeft.fill (0.0f);
     scopeRight.fill (0.0f);
     surroundView.reset();
@@ -2889,6 +2921,7 @@ void LudensScopeEditor::resetDisplay()
     analyzer.resetAverage();
     truePeakLeft.reset();
     truePeakRight.reset();
+    selectionLoudness.reset();
 
     hasReference = false;
     referencePath.clear();
@@ -2916,8 +2949,8 @@ void LudensScopeEditor::resetDisplay()
     analyzer.update();
 
     spectrumView.setData (analyzer.levels().data(), analyzer.peaks().data());
-    meterPanel.setValues (processor.momentaryLufs(), processor.shortTermLufs(),
-                          processor.integratedLufs(), truePeakDb, samplePeakDb,
+    meterPanel.setValues (selectionLoudness.momentaryLufs(), selectionLoudness.shortTermLufs(),
+                          selectionLoudness.integratedLufs(), truePeakDb, samplePeakDb,
                           correlation, truePeakHoldDb, -1.0f, -100.0f, 0, 0);
     vectorScopeView.setData (scopeLeft.data() + (scopeSize - 1024),
                              scopeRight.data() + (scopeSize - 1024), 1024);
